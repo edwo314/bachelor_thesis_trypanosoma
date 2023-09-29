@@ -22,7 +22,7 @@ from constants import SELECTED_GENES
 
 tryptag = TrypTag()
 
-base_directory = r'E:\PycharmProjects\BA\dataset\raw'
+base_directory = r'dataset\raw'
 models_dir = "kmeans_models"
 
 
@@ -75,6 +75,7 @@ def get_largest_overlapping_component(mng_mask, phase_mask):
     return best_component
 
 
+### THIS FUNCTION WAS COPIED FROM THE TRYPTAG PACKAGE AND POSSIBLY MODIFIED FOR MY PURPOSES ###
 def morphology_analysis(img):
     # Apply the second medial axis transform to the resized component
     pth_skeleton, distances = _mask_pruned_skeleton(img, 0, 15)
@@ -121,6 +122,7 @@ def morphology_analysis(img):
     return morphology
 
 
+### THIS FUNCTION WAS COPIED FROM THE TRYPTAG PACKAGE AND POSSIBLY MODIFIED FOR MY PURPOSES ###
 def calculate_midline_length(midline_analysis):
     # calculate distance along midline
     distance = [0]

@@ -157,7 +157,7 @@ def main(file_path):
 
     image = tiff.imread(file_path)
     num_channels = image.shape[0]
-    clusters = [4, 4, 2]
+    clusters = [4, 2, 2]
     # plot_channels(image, num_channels)
     kmeans_models, clusterings = plot_clusters(image, num_channels, clusters)
     plot_clusters_binary(clusterings, clusters)
