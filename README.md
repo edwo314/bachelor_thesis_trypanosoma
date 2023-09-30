@@ -3,7 +3,7 @@
 This repository contains the code used for generating plots and statistics in my Bachelor's thesis related to *Trypanosoma*. The code is provided "AS IS", without warranty of completeness or functionality, as it was created for specific, non-general purposes.
 
 ## Disclaimer
-- The code may not be user-friendly, and it was not intended for use by the general public.
+- The code may not be user-friendly, as it was not intended for use by the general public. It is rather a collection of scripts than a cohesive program.
 - Users should be cautious and aware that some files need to be run in a specific order due to dependencies on the output of other files.
 
 ## Usage
