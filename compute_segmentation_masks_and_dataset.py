@@ -5,19 +5,19 @@ from typing import List, Optional
 
 import cv2
 import numpy as np
-import ray as ray
+import ray
 import tifffile as tiff
 from joblib import load, dump
-from matplotlib import pyplot as plt, patches
+from matplotlib import pyplot as plt
 from scipy import ndimage
 from sklearnex import patch_sklearn
+from tqdm import tqdm
 
 from constants import SELECTED_GENES, DATASET_DIR, MODELS_DIR
 
 patch_sklearn()
 
 from sklearn.cluster import KMeans
-from tqdm import tqdm
 
 
 def fill_holes(mask, kernel_size=5):
@@ -32,16 +32,155 @@ def fill_holes(mask, kernel_size=5):
     return closed_mask
 
 
-def filter_islands_by_size(mask, min_size=0, max_size=10000):
+def filter_islands_by_size(mask, min_size=0, max_size=10000, img=None, show_images=False):
     # Connected component analysis and size filtering
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, 8, cv2.CV_8U)
 
-    filtered_mask = np.zeros_like(mask, dtype=np.uint8)
+    if show_images:
+        try:
+            # Create a figure with three subplots
+            fig, axs = plt.subplots(1, 3, figsize=(24, 8))
 
+            # Plot the original image
+            axs[0].imshow(img, cmap='gray')
+            axs[0].set_title("Original Image")
+
+            # Plot the original mask with component sizes annotated
+            annotated_mask = np.dstack([mask] * 3)  # Convert mask to 3 channels to display text in color
+            for i in range(1, num_labels):
+                x, y = centroids[i]
+                cv2.putText(annotated_mask, str(stats[i, cv2.CC_STAT_AREA]), (int(x), int(y)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 0), 2)
+            axs[1].imshow(annotated_mask)
+            axs[1].set_title("Original Mask with Component Sizes")
+
+            # Plot a histogram of the sizes
+            sizes = stats[1:, cv2.CC_STAT_AREA]  # Exclude the background size
+            axs[2].hist(sizes, bins=100, range=(min_size, 6000))
+            axs[2].set_title("Histogram of Component Sizes")
+            axs[2].set_xlabel("Size")
+            axs[2].set_ylabel("Frequency")
+
+            plt.tight_layout()
+            plt.show()
+        except:
+            pass
+
+    filtered_mask = np.zeros_like(mask, dtype=np.uint8)
     for i in range(1, num_labels):
-        if min_size < stats[i, cv2.CC_STAT_AREA] < max_size:
+        if min_size <= stats[i, cv2.CC_STAT_AREA] <= max_size:
             filtered_mask[labels == i] = 255
+
+    # filtered_mask will be the output of the function with applied size filtering
     return filtered_mask
+
+
+def plot_histogram(data, labels, nuclei_label, title):
+    # Determine the number of bins and the range for the histogram
+    bins = 200
+    range_min, range_max = 0, 50
+    bin_width = (range_max - range_min) / bins
+
+    # Create the histogram bins manually
+    hist, bin_edges = np.histogram(data, bins=bins, range=(range_min, range_max))
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+    # Plot each bin with the corresponding color
+    for i in range(bins):
+        # Determine which data points fall into the current bin
+        bin_mask = (data >= bin_edges[i]) & (data < bin_edges[i + 1])
+        bin_labels = labels[bin_mask]
+
+        # Determine the color for this bin based on the predominant cluster label
+        if len(bin_labels) > 0:  # Check if there are any data points in the bin
+            # If the most frequent label in the bin is equal to nuclei_label, use 'red'; otherwise, use 'blue'
+            color = 'red' if np.bincount(bin_labels).argmax() == nuclei_label else 'blue'
+        else:
+            # If there are no data points in the bin, you can choose a default color, e.g., 'grey'
+            color = 'grey'
+
+        plt.bar(bin_centers[i], hist[i], width=bin_width, color=color, edgecolor='black')
+
+    plt.title(title)
+    plt.show()
+
+
+def remove_outliers(data):
+    Q1 = np.percentile(data, 25)
+    Q3 = np.percentile(data, 75)
+    IQR = Q3 - Q1
+    lower_bound = Q1 - 1.5 * IQR
+    upper_bound = Q3 + 1.5 * IQR
+    return [x for x in data if lower_bound < x < upper_bound]
+
+
+@ray.remote
+def process_tif_file(tif_file_name, directory):
+    field_name = os.path.splitext(tif_file_name)[0]
+    gene_name, _, terminus, field_index = field_name.split('_')
+    field_directory = os.path.join(directory, field_name)
+    if not os.path.exists(field_directory):
+        os.makedirs(field_directory)
+    field = Field(index=int(field_index), terminus=terminus, gene_name=gene_name, base_path=field_directory,
+                  img_path=os.path.join(directory, tif_file_name),
+                  mask_path=os.path.join(directory, field_name + "_thr.tif"))
+    return field
+
+
+def train_kmeans(directory, channel, n_clusters, genes_of_interest=None, show_images=False):
+    files = list(set([file for file in os.listdir(directory) if file.endswith('.tif') and 'thr.tif' not in file
+                      and any(gene in file for gene in (genes_of_interest or []))]))
+
+    # dont set k too high, you will run out of memory
+    files = random.sample(files, k=max(len(files), min(30, len(files))))
+    image_width = 2560
+    image_height = 2160
+    image_pixels = image_width * image_height
+    print(f"Training KMeans model on {len(files) * image_pixels} datapoints")
+
+    stacked_images = np.zeros((image_pixels * len(files), 1))
+
+    for i, file_name in enumerate(files):
+        img = tiff.imread(os.path.join(directory, file_name))
+        img_channel = img[channel, :, :].reshape(-1, 1)
+        stacked_images[image_pixels * i:image_pixels * (i + 1), :] = img_channel
+
+    flattened_images = stacked_images.reshape(-1, 1)
+    kmeans = KMeans(n_clusters=n_clusters, random_state=0, n_init="auto").fit(flattened_images)
+    labels = kmeans.labels_
+    unique_labels = np.unique(labels)
+
+    gene_id = directory.split("\\")[-1]
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    model_path = os.path.join(MODELS_DIR, f'{gene_id}_channel_{channel}_clusters_{n_clusters}.joblib')
+    dump(kmeans, model_path)
+
+    print(f"KMeans model trained and saved to {model_path}")
+
+    if show_images:
+        # Reshape the first chunk of the flattened images to its original dimensions for display
+        img_chunk = flattened_images[:image_pixels].reshape(image_height, image_width)
+        labels_chunk = labels[:image_pixels].reshape(image_height, image_width)
+
+        num_clusters = len(unique_labels)
+        num_cols = 2  # Set the desired number of columns
+        num_rows = (num_clusters + num_cols - 1) // num_cols  # Calculate the required number of rows
+
+        fig, axs = plt.subplots(num_rows, num_cols, figsize=(10, num_rows * 3), squeeze=False)
+        axs = axs.flatten()  # Flatten the array of axes for easy iteration
+
+        for i, label in enumerate(unique_labels):
+            cluster_mask = (labels_chunk == label)
+            axs[i].imshow(img_chunk * cluster_mask, cmap='gray')
+            axs[i].set_title(f'Cluster {label}')
+            axs[i].axis('off')  # Optionally turn off axes for a cleaner look
+
+        for ax in axs[num_clusters:]:  # Turn off unused subplots
+            ax.axis('off')
+
+        plt.suptitle('K-Means Clustering' + f' (k={num_clusters})' + f' - {os.path.basename(model_path)}')
+        plt.tight_layout()
+        plt.show()
 
 
 @dataclass
@@ -97,18 +236,34 @@ class Field:
 
     def __post_init__(self):
         self.cells = []
-        self.initialize_images()
-        # self.get_cells()
+        self._initialize_images()
+        self._get_cells()
 
-    def get_cells(self):
-        # Load the image from the base_path + phase_mask.png
-        img_path = os.path.join(self.base_path, 'phase_mask.png')
-        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+    @property
+    def phase_img(self):
+        return cv2.imread(os.path.join(self.base_path, "phase.png"), cv2.IMREAD_GRAYSCALE)
 
-        # Load the DNA mask for nucleus and kinetoplast analysis
-        dna_mask_path = os.path.join(self.base_path, 'dna_mask.png')
-        dna_mask = cv2.imread(dna_mask_path, cv2.IMREAD_GRAYSCALE)
+    @property
+    def dna_img(self):
+        return cv2.imread(os.path.join(self.base_path, "dna.png"), cv2.IMREAD_GRAYSCALE)
 
+    @property
+    def mng_img(self):
+        return cv2.imread(os.path.join(self.base_path, "mng.png"), cv2.IMREAD_GRAYSCALE)
+
+    @property
+    def phase_mask(self):
+        return cv2.imread(os.path.join(self.base_path, "phase_mask.png"), cv2.IMREAD_GRAYSCALE)
+
+    @property
+    def dna_mask(self):
+        return cv2.imread(os.path.join(self.base_path, "dna_mask.png"), cv2.IMREAD_GRAYSCALE)
+
+    @property
+    def mng_mask(self):
+        return cv2.imread(os.path.join(self.base_path, "mng_mask.png"), cv2.IMREAD_GRAYSCALE)
+
+    def _get_get_ellipse_and_axis_data(self, dna_mask):
         # Perform connected components analysis on DNA mask
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(dna_mask, connectivity=8)
 
@@ -143,16 +298,24 @@ class Field:
             ellipses.append(ellipse)
             axes_data.append([minor_axis_length, major_axis_length])
 
+        return ellipses, axes_data
+
+    def _get_cells(self):
+        # Load the image from the base_path + phase_mask.png
+        img_path = os.path.join(self.base_path, 'phase_mask.png')
+        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+
+        """
+        ### THIS VISUALIZES THE ELLIPSES FOR THE DNA MASKS AND DECIDES BETWEEN KINETOPLAST AND NUCLEUS ### 
+        
+        # Load the DNA mask for nucleus and kinetoplast analysis
+        dna_mask_path = os.path.join(self.base_path, 'dna_mask.png')
+        dna_mask = cv2.imread(dna_mask_path, cv2.IMREAD_GRAYSCALE)
+
+        ellipses, axes_data = self._get_get_ellipse_and_axis_data(dna_mask)
+
         minor_axes = [x[0] for x in axes_data]
         major_axes = [x[1] for x in axes_data]
-
-        def remove_outliers(data):
-            Q1 = np.percentile(data, 25)
-            Q3 = np.percentile(data, 75)
-            IQR = Q3 - Q1
-            lower_bound = Q1 - 1.5 * IQR
-            upper_bound = Q3 + 1.5 * IQR
-            return [x for x in data if lower_bound < x < upper_bound]
 
         # Remove outliers from minor and major axes
         minor_axes_clean = remove_outliers(minor_axes)
@@ -162,64 +325,37 @@ class Field:
         kmeans_minor = KMeans(n_clusters=2, n_init="auto").fit(np.array(minor_axes_clean).reshape(-1, 1))
         kmeans_major = KMeans(n_clusters=2, n_init="auto").fit(np.array(major_axes_clean).reshape(-1, 1))
 
-        nuclei_label_minor = np.argmax(np.bincount(kmeans_minor.labels_))
-        nuclei_label_major = np.argmax(np.bincount(kmeans_major.labels_))
-
-        def plot_histogram(data, labels, nuclei_label, title):
-            # Determine the number of bins and the range for the histogram
-            bins = 50
-            range_min, range_max = 0, 500
-            bin_width = (range_max - range_min) / bins
-
-            # Create the histogram bins manually
-            hist, bin_edges = np.histogram(data, bins=bins, range=(range_min, range_max))
-            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-
-            # Plot each bin with the corresponding color
-            for i in range(bins):
-                # Determine the color for this bin based on the clustering labels
-                color = 'red' if np.mean([labels[j] for j in range(len(data)) if
-                                          bin_edges[i] <= data[j] < bin_edges[i + 1]]) == nuclei_label else 'blue'
-                plt.bar(bin_centers[i], hist[i], width=bin_width, color=color, edgecolor='black')
-
-            plt.title(title)
-            plt.show()
+        # Ensure minor_axes_clean and kmeans_minor.labels_ are numpy arrays
+        minor_axes_clean_np = np.array(minor_axes_clean)
+        labels_minor_np = np.array(kmeans_minor.labels_)
+        # Calculate mean values for each cluster in minor axes
+        mean_minor_axes = [np.mean(minor_axes_clean_np[labels_minor_np == i]) for i in range(2)]
+        # Find the label of the cluster with the higher mean value in minor axes
+        nuclei_label_minor = np.argmax(mean_minor_axes)
+        # Same for major axes
+        major_axes_clean_np = np.array(major_axes_clean)
+        labels_major_np = np.array(kmeans_major.labels_)
+        mean_major_axes = [np.mean(major_axes_clean_np[labels_major_np == i]) for i in range(2)]
+        nuclei_label_major = np.argmax(mean_major_axes)
 
         # Plot histograms for minor and major axes
         plot_histogram(minor_axes_clean, kmeans_minor.labels_, nuclei_label_minor, 'Minor Axes Clustering')
         plot_histogram(major_axes_clean, kmeans_major.labels_, nuclei_label_major, 'Major Axes Clustering')
 
-        final_labels = []
-        for minor_label, major_label in zip(kmeans_minor.labels_, kmeans_major.labels_):
-            if minor_label == major_label:
-                final_labels.append(minor_label)
-            else:
-                final_labels.append(major_label)
+        # Perform 2D clustering into two clusters: kinetoplasts and nuclei based on ellipse axes
+        kmeans = KMeans(n_clusters=2, n_init="auto").fit(axes_data)
+        cluster_centers = kmeans.cluster_centers_
+        nuclei_cluster = np.argmax(np.linalg.norm(cluster_centers, axis=1))
 
-        # Map the final labels to nuclei and kinetoplast using the major axis labels
-        final_labels = [nuclei_label_major if label == nuclei_label_major else 1 - nuclei_label_major for label in
-                        final_labels]
-
-        ## Perform clustering into two clusters: kinetoplasts and nuclei
-        # kmeans = KMeans(n_clusters=2).fit(axes_data)
-        # cluster_centers = kmeans.cluster_centers_
-        # nuclei_cluster = np.argmax(cluster_centers.mean(axis=1))
-        #
-        ## Assign objects to kinetoplasts and nuclei and plot ellipses if required
-        # kinetoplast_data = {'minor_axis_length': [], 'major_axis_length': []}
-        # nuclei_data = {'minor_axis_length': [], 'major_axis_length': []}
-        #
-        # plt.imshow(dna_mask, cmap='gray')
         # Initialize plot with the DNA mask
         plt.figure(figsize=(10, 10), dpi=300)  # Adjust size as needed
         plt.imshow(dna_mask, cmap='gray')
 
         # Iterate through the final labels and the axes data
-        for label, (minor_axis_length, major_axis_length), ellipse in zip(final_labels, axes_data,
-                                                                          ellipses):
+        for label, (minor_axis_length, major_axis_length), ellipse in zip(kmeans.labels_, axes_data, ellipses):
             (xc, yc), (d1, d2), angle = ellipse
-            # Determine color (e.g., red for nuclei, blue for kinetoplast)
-            color = 'red' if label == nuclei_label_major else 'blue'
+            # Determine color based on the cluster label: red for nuclei, blue for kinetoplast
+            color = 'red' if label == nuclei_cluster else 'blue'
 
             # Create an Ellipse patch object with the calculated parameters
             ellipse_patch = patches.Ellipse((xc, yc), major_axis_length, minor_axis_length, angle=angle + 90,
@@ -229,37 +365,8 @@ class Field:
             plt.gca().add_patch(ellipse_patch)
 
         # Show the plot
-        plt.show()
-
-        # for i, label in enumerate(kmeans.labels_):
-        #    data = {
-        #        'minor_axis_length': axes_data[i][0],
-        #        'major_axis_length': axes_data[i][1],
-        #    }
-        #    if label == nuclei_cluster:
-        #        nuclei_data['minor_axis_length'].append(data['minor_axis_length'])
-        #        nuclei_data['major_axis_length'].append(data['major_axis_length'])
-        #    else:
-        #        kinetoplast_data['minor_axis_length'].append(data['minor_axis_length'])
-        #        kinetoplast_data['major_axis_length'].append(data['major_axis_length'])
-        #
-        #    (xc, yc), (d1, d2), angle = cv2.fitEllipse(contours[0])  # Store the tuple here
-        #    major_axis_length = d1
-        #    minor_axis_length = d2
-        #
-        #    obj_centroid = centroids[i + 1]
-        #    ellipse = patches.Ellipse((obj_centroid[0], obj_centroid[1]),
-        #                              major_axis_length,
-        #                              minor_axis_length,
-        #                              angle=angle,  # Corrected line
-        #                              fill=True,
-        #                              edgecolor='red' if label == nuclei_cluster else 'blue')
-        #    plt.gca().add_patch(ellipse)
-        # plt.show()
-
-        # Check if image was properly loaded
-        if img is None:
-            raise FileNotFoundError(f"Could not load image from {img_path}")
+        plt.title("Nuclei in red, Kinetoplasts in blue")
+        plt.show()"""
 
         # Get all connected components
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(img, connectivity=8)
@@ -287,40 +394,12 @@ class Field:
                 continue
 
             # Throw out cells that don't contain a nucleus and kinetoplast
-            # You would need to implement specific logic for this condition.
-            # Example:
-            # if not contains_nucleus_and_kinetoplast(img, stats[i]):
-            #     continue
 
             cell = Cell(index=i, stats=tuple(stats[i]), base_path=self.base_path)
             self.cells.append(cell)
 
-    @property
-    def phase_img(self):
-        return cv2.imread(os.path.join(self.base_path, "phase.png"), cv2.IMREAD_GRAYSCALE)
-
-    @property
-    def dna_img(self):
-        return cv2.imread(os.path.join(self.base_path, "dna.png"), cv2.IMREAD_GRAYSCALE)
-
-    @property
-    def mng_img(self):
-        return cv2.imread(os.path.join(self.base_path, "mng.png"), cv2.IMREAD_GRAYSCALE)
-
-    @property
-    def phase_mask(self):
-        return cv2.imread(os.path.join(self.base_path, "phase_mask.png"), cv2.IMREAD_GRAYSCALE)
-
-    @property
-    def dna_mask(self):
-        return cv2.imread(os.path.join(self.base_path, "dna_mask.png"), cv2.IMREAD_GRAYSCALE)
-
-    @property
-    def mng_mask(self):
-        return cv2.imread(os.path.join(self.base_path, "mng_mask.png"), cv2.IMREAD_GRAYSCALE)
-
-    def initialize_images(self):
-        img = self.load_image(self.img_path)
+    def _initialize_images(self):
+        img = self._load_image(self.img_path)
         phase_img, mng_img, dna_img = img[0, :, :], img[1, :, :], img[2, :, :]
 
         # Save each image as PNG using OpenCV
@@ -329,23 +408,23 @@ class Field:
         cv2.imwrite(os.path.join(self.base_path, "mng.png"), mng_img)
 
         # Create and save masks
-        self.create_and_save_mask(phase_img, os.path.join(self.base_path, "phase_mask.png"))
-        self.create_and_save_mask(dna_img, os.path.join(self.base_path, "dna_mask.png"))
-        self.create_and_save_mask(mng_img, os.path.join(self.base_path, "mng_mask.png"))
+        self._create_and_save_mask(phase_img, os.path.join(self.base_path, "phase_mask.png"))
+        self._create_and_save_mask(dna_img, os.path.join(self.base_path, "dna_mask.png"))
+        self._create_and_save_mask(mng_img, os.path.join(self.base_path, "mng_mask.png"))
 
-    def create_and_save_mask(self, img, mask_path):
+    def _create_and_save_mask(self, img, mask_path):
         show_images = False
         if "phase" in mask_path:
-            phase_mask = self.create_phase_mask(img, show_images=show_images)
+            phase_mask = self._create_phase_mask(img, show_images=show_images)
             cv2.imwrite(mask_path, phase_mask)
         elif "dna" in mask_path:
-            dna_mask = self.create_dna_mask(img, show_images=show_images)
+            dna_mask = self._create_dna_mask(img, show_images=show_images)
             cv2.imwrite(mask_path, dna_mask)
         elif "mng" in mask_path:
-            mng_mask = self.create_mng_mask(img, show_images=show_images)
+            mng_mask = self._create_mng_mask(img, show_images=show_images)
             cv2.imwrite(mask_path, mng_mask)
 
-    def load_image(self, img_path):
+    def _load_image(self, img_path):
         return tiff.imread(img_path)
 
     def _get_model_name_and_path(self, channel):
@@ -407,12 +486,12 @@ class Field:
             cluster_mask = (labels == selected_cluster).reshape(img.shape).astype(np.uint8)
         return cluster_mask
 
-    def create_phase_mask(self, img, show_images=False):
+    def _create_phase_mask(self, img, show_images=False):
         thr_img = self._load_thresholded_image(self.img_path)
         model_name, model_path = self._get_model_name_and_path(0)
         clustered_binary_image = self._get_best_mask(img, thr_img, model_name)
         hole_filled_mask = fill_holes(clustered_binary_image)
-        filtered_mask = filter_islands_by_size(hole_filled_mask)
+        filtered_mask = filter_islands_by_size(hole_filled_mask, min_size=1000, max_size=5000, img=img, show_images=show_images)
 
         if show_images:
             # Create a plot with subplots for each step
@@ -433,19 +512,19 @@ class Field:
 
         return filtered_mask
 
-    def create_mng_mask(self, img, show_images=False):
+    def _create_mng_mask(self, img, show_images=False):
         clustered_binary_image = self._perform_kmeans_clustering(img, 1, None, show_images, True)
 
         hole_filled_mask = fill_holes(clustered_binary_image)
-        filtered_mask = filter_islands_by_size(hole_filled_mask)
+        filtered_mask = filter_islands_by_size(hole_filled_mask, img=img, show_images=show_images)
 
         return filtered_mask
 
-    def create_dna_mask(self, img, show_images=False):
+    def _create_dna_mask(self, img, show_images=False):
         clustered_binary_image = self._perform_kmeans_clustering(img, 2, None, show_images, True)
 
         hole_filled_mask = fill_holes(clustered_binary_image)
-        filtered_mask = filter_islands_by_size(hole_filled_mask)
+        filtered_mask = filter_islands_by_size(hole_filled_mask, img=img, show_images=show_images)
 
         return filtered_mask
 
@@ -466,7 +545,7 @@ class Field:
         max_overlap = 0
         best_mask = None
 
-        for cluster_index in range(1, num_clusters + 1):  # +1 because range is exclusive at the end
+        for cluster_index in range(1, num_clusters + 1):
             clustered_binary_image = self._perform_kmeans_clustering(img, 0, cluster_index, False)
             overlap = self._compute_overlap(clustered_binary_image, thr_img)
             if overlap > max_overlap:
@@ -481,19 +560,6 @@ class Field:
         """
         classifier_filename = classifier_filename.split(".")[2]
         return int(classifier_filename.split("_")[-1])
-
-
-@ray.remote
-def process_tif_file(tif_file_name, directory):
-    field_name = os.path.splitext(tif_file_name)[0]
-    gene_name, _, terminus, field_index = field_name.split('_')
-    field_directory = os.path.join(directory, field_name)
-    if not os.path.exists(field_directory):
-        os.makedirs(field_directory)
-    field = Field(index=int(field_index), terminus=terminus, gene_name=gene_name, base_path=field_directory,
-                  img_path=os.path.join(directory, tif_file_name),
-                  mask_path=os.path.join(directory, field_name + "_thr.tif"))
-    return field
 
 
 @dataclass
@@ -522,67 +588,11 @@ class TrypTagDataset:
         return sum([len(field.cells) for field in self.fields])
 
 
-def stack_images_and_train_kmeans(directory, channel, n_clusters, genes_of_interest=None, show_images=False):
-    files = list(set([file for file in os.listdir(directory) if file.endswith('.tif') and 'thr.tif' not in file
-                      and any(gene in file for gene in (genes_of_interest or []))]))
-
-    # dont set k too high, you will run out of memory
-    files = random.sample(files, k=max(len(files), min(30, len(files))))
-    image_width = 2560
-    image_height = 2160
-    image_pixels = image_width * image_height
-    print(f"Training KMeans model on {len(files) * image_pixels} datapoints")
-
-    stacked_images = np.zeros((image_pixels * len(files), 1))
-
-    for i, file_name in enumerate(files):
-        img = tiff.imread(os.path.join(directory, file_name))
-        img_channel = img[channel, :, :].reshape(-1, 1)
-        stacked_images[image_pixels * i:image_pixels * (i + 1), :] = img_channel
-
-    flattened_images = stacked_images.reshape(-1, 1)
-    kmeans = KMeans(n_clusters=n_clusters, random_state=0, n_init="auto").fit(flattened_images)
-    labels = kmeans.labels_
-    unique_labels = np.unique(labels)
-
-    gene_id = directory.split("\\")[-1]
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    model_path = os.path.join(MODELS_DIR, f'{gene_id}_channel_{channel}_clusters_{n_clusters}.joblib')
-    dump(kmeans, model_path)
-
-    print(f"KMeans model trained and saved to {model_path}")
-
-    if show_images:
-        # Reshape the first chunk of the flattened images to its original dimensions for display
-        img_chunk = flattened_images[:image_pixels].reshape(image_height, image_width)
-        labels_chunk = labels[:image_pixels].reshape(image_height, image_width)
-
-        num_clusters = len(unique_labels)
-        num_cols = 2  # Set the desired number of columns
-        num_rows = (num_clusters + num_cols - 1) // num_cols  # Calculate the required number of rows
-
-        fig, axs = plt.subplots(num_rows, num_cols, figsize=(10, num_rows * 3), squeeze=False)
-        axs = axs.flatten()  # Flatten the array of axes for easy iteration
-
-        for i, label in enumerate(unique_labels):
-            cluster_mask = (labels_chunk == label)
-            axs[i].imshow(img_chunk * cluster_mask, cmap='gray')
-            axs[i].set_title(f'Cluster {label}')
-            axs[i].axis('off')  # Optionally turn off axes for a cleaner look
-
-        for ax in axs[num_clusters:]:  # Turn off unused subplots
-            ax.axis('off')
-
-        plt.suptitle('K-Means Clustering' + f' (k={num_clusters})' + f' - {os.path.basename(model_path)}')
-        plt.tight_layout()
-        plt.show()
-
-
 if __name__ == '__main__':
     """
     This should be run once to train a KMeans model for each gene and each channel.
-    It will create a kmeans_models directory in the current directory and store the trained KMeans models there.
-    Additionally, it will save the images of the KMeans clusters under dataset
+    It will create a kmeans_models directory in the current directory and store the models there.
+    Additionally, it will save the segmented images under dataset
     """
 
     # phase, channel 0, clusters 4
@@ -610,7 +620,7 @@ if __name__ == '__main__':
         if CLUSTERING:
             for channel, n_clusters in channels_and_clusters.items():
                 print(f"Training KMeans for gene {gene}, channel {channel} with {n_clusters} clusters.")
-                stack_images_and_train_kmeans(gene_directory, channel, n_clusters, gene, SHOW_IMAGES)
+                train_kmeans(gene_directory, channel, n_clusters, gene, SHOW_IMAGES)
 
-        # Create a dataset for the current gene
+        # uses the trained KMeans models and will save the segmentation masks and the dataset
         TrypTagDataset(directory=gene_directory, genes_of_interest=[gene])

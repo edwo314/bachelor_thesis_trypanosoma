@@ -59,6 +59,11 @@ def get_clustering_metrics(image: str, channel: int, silhouette_range: range, re
         silhouette_scores.append(silhouette)
         clustered_images_list.append(clustered_image)
 
+    return inertias, silhouette_scores, clustered_images_list, img
+
+
+def plot_clustering_results(inertias, silhouette_scores, clustered_images_list, img, channel, silhouette_range):
+    # Plotting the clustered images
     fig_width = 5 * (len(silhouette_range) + 1)
     fig_height = 5
 
@@ -119,5 +124,8 @@ if __name__ == "__main__":
     # e.g we expect a minimum of 4 clusters in the phase channel, it will calculate it for 4, 5, 6, 7 clusters, this is set by the silhouette range
     pairs = ((4, 0), (2, 1), (2, 2))
     for clusters, channel in pairs:
-        get_clustering_metrics(rf"{DATASET_DIR}\Tb927.3.4290\Tb927.3.4290_4_N_1.tif", channel=channel,
-                               silhouette_range=range(clusters, clusters + 4), resize_factor=4)
+        inertias, silhouette_scores, clustered_images_list, img = get_clustering_metrics(
+            rf"{DATASET_DIR}\Tb927.3.4290\Tb927.3.4290_4_N_1.tif", channel=channel,
+            silhouette_range=range(clusters, clusters + 4), resize_factor=8)
+        plot_clustering_results(inertias, silhouette_scores, clustered_images_list, img, channel,
+                                range(clusters, clusters + 4))

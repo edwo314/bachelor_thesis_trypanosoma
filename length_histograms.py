@@ -1,7 +1,6 @@
 import os
 
 import cv2
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import ray
@@ -248,38 +247,8 @@ def process_gene(gene, terminus):
     return kn_lengths
 
 
-if __name__ == "__main__":
-    """
-    It will first create all the images and save them under ./flagella then it will calculate the statistics and save the images in the base directory for each KN configuration.
-    Don't mind the RuntimeWarning from matplotlib, this is an error due to the multiprocessing.
-    
-    The actual statistics might vary by a few samples due to the randomness of the algorithm.
-    """
-
-    ray.init()
-
-    tryptag = TrypTag()
-
-    selected_genes = SELECTED_GENES
-
-    all_kn_lengths = {}
-
-    futures = [process_gene.remote(gene, selected_genes[gene][0]) for gene in selected_genes.keys()]
-    results = ray.get(futures)
-    for kn_lengths in results:
-        for kn, data in kn_lengths.items():
-            if kn not in all_kn_lengths:
-                all_kn_lengths[kn] = {
-                    'lengths': [],
-                    'corrected_lengths': [],
-                    'flagella_lengths': [],
-                    'corrected_flagella_lengths': []
-                }
-            all_kn_lengths[kn]['lengths'].extend(data['lengths'])
-            all_kn_lengths[kn]['corrected_lengths'].extend(data['corrected_lengths'])
-            all_kn_lengths[kn]['flagella_lengths'].extend(data['flagella_lengths'])
-            all_kn_lengths[kn]['corrected_flagella_lengths'].extend(data['corrected_flagella_lengths'])
-
+def plot_histograms(kn_data):
+    all_kn_lengths = kn_data
     font_size = 14
     plt.rcParams.update({'font.size': font_size})
 
@@ -349,4 +318,32 @@ if __name__ == "__main__":
         plt.savefig(f'{kn}_flagella_lengths.png')
         plt.show()
 
-    ray.shutdown()
+
+if __name__ == "__main__":
+    """
+    It will first create all the images and save them under ./flagella then it will calculate the statistics and save the images in the base directory for each KN configuration.
+    Don't mind the RuntimeWarning from matplotlib, this is an error due to the multiprocessing.
+    
+    The actual statistics might vary by a few samples due to the randomness of the algorithm.
+    """
+
+    ray.init()
+    tryptag = TrypTag()
+    all_kn_lengths = {}
+    futures = [process_gene.remote(gene, SELECTED_GENES[gene][0]) for gene in SELECTED_GENES.keys()]
+    results = ray.get(futures)
+    for kn_lengths in results:
+        for kn, data in kn_lengths.items():
+            if kn not in all_kn_lengths:
+                all_kn_lengths[kn] = {
+                    'lengths': [],
+                    'corrected_lengths': [],
+                    'flagella_lengths': [],
+                    'corrected_flagella_lengths': []
+                }
+            all_kn_lengths[kn]['lengths'].extend(data['lengths'])
+            all_kn_lengths[kn]['corrected_lengths'].extend(data['corrected_lengths'])
+            all_kn_lengths[kn]['flagella_lengths'].extend(data['flagella_lengths'])
+            all_kn_lengths[kn]['corrected_flagella_lengths'].extend(data['corrected_flagella_lengths'])
+
+    plot_histograms(all_kn_lengths)
