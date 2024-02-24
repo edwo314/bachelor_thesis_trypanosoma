@@ -18,23 +18,21 @@ from tryptag import TrypTag, CellLine
 from tryptag.tryptools import cell_signal_analysis
 from tryptag.tryptools.tryptools import cell_morphology_analysis, _mask_pruned_skeleton
 
-from constants import SELECTED_GENES
+from constants import SELECTED_GENES, MODELS_DIR
 
 tryptag = TrypTag()
 
-base_directory = r'dataset\raw'
-models_dir = "kmeans_models"
-
+os.makedirs("assets", exist_ok=True)
 
 def load_model(gene):
     model_name = f"{gene}_channel_1"
-    matching_models = [model for model in os.listdir(models_dir) if model_name in model]
+    matching_models = [model for model in os.listdir(MODELS_DIR) if model_name in model]
 
     if not matching_models:
         raise FileNotFoundError
 
     model_name = matching_models[0]
-    model_path = os.path.join(models_dir, model_name)
+    model_path = os.path.join(MODELS_DIR, model_name)
     kmeans = load(model_path)
     print(f"Loaded model {model_name} from {model_path}")
     return kmeans
@@ -245,7 +243,7 @@ def process_gene(gene, terminus):
 
 selected_genes = SELECTED_GENES
 
-futures = [process_gene.remote(gene, selected_genes[gene][0]) for gene in selected_genes.keys()]
+futures = [process_gene.remote(gene, selected_genes[gene][0]) for gene in list(selected_genes.keys())]
 rows = ray.get(futures)
 
 # Flatten the list of lists

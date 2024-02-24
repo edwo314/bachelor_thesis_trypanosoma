@@ -29,7 +29,7 @@ def plot_clusters(image, num_channels, clusters):
 
         kmeans_model_path = Path("kmeans_models") / f"kmeans_model_channel_{i}_{clusters[i]}.joblib"
         print(f"Performing clustering and saving KMeans model to {kmeans_model_path}")
-        kmeans = KMeans(n_clusters=clusters[i], random_state=0).fit(reshaped_channel)
+        kmeans = KMeans(n_clusters=clusters[i], random_state=0, n_init="auto").fit(reshaped_channel)
 
         kmeans_models.append(kmeans)
 

@@ -1,6 +1,8 @@
 import os
 
 import cv2
+import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
 import ray
 import scipy
@@ -9,23 +11,19 @@ from joblib import load
 from matplotlib import patches
 from tryptag import TrypTag, CellLine, tryptools
 from tryptag.tryptools.tryptools import cell_morphology_analysis, _mask_pruned_skeleton
-import matplotlib.pyplot as plt
 
-from constants import SELECTED_GENES
-
-base_directory = r'dataset\raw'
-models_dir = "kmeans_models"
+from constants import SELECTED_GENES, MODELS_DIR
 
 
 def load_model(gene):
     model_name = f"{gene}_channel_1"
-    matching_models = [model for model in os.listdir(models_dir) if model_name in model]
+    matching_models = [model for model in os.listdir(MODELS_DIR) if model_name in model]
 
     if not matching_models:
         raise FileNotFoundError
 
     model_name = matching_models[0]
-    model_path = os.path.join(models_dir, model_name)
+    model_path = os.path.join(MODELS_DIR, model_name)
     kmeans = load(model_path)
     print(f"Loaded model {model_name} from {model_path}")
     return kmeans
@@ -111,6 +109,7 @@ def morphology_analysis(img):
         })
 
     return morphology
+
 
 ### THIS FUNCTION WAS COPIED FROM THE TRYPTAG PACKAGE AND POSSIBLY MODIFIED FOR MY PURPOSES ###
 def calculate_midline_length(midline_analysis):
@@ -204,8 +203,8 @@ def process_gene(gene, terminus):
                     end = flagella_morphology["midline"][-1]
                     flagella_length = calculate_midline_length(flagella_morphology)
                     corrected_flagella_length = (
-                                flagella_morphology["distances"][start[0], start[1]] + flagella_morphology["distances"][
-                            end[0], end[1]] + flagella_length)
+                            flagella_morphology["distances"][start[0], start[1]] + flagella_morphology["distances"][
+                        end[0], end[1]] + flagella_length)
                 else:
                     continue
 
@@ -250,6 +249,13 @@ def process_gene(gene, terminus):
 
 
 if __name__ == "__main__":
+    """
+    It will first create all the images and save them under ./flagella then it will calculate the statistics and save the images in the base directory for each KN configuration.
+    Don't mind the RuntimeWarning from matplotlib, this is an error due to the multiprocessing.
+    
+    The actual statistics might vary by a few samples due to the randomness of the algorithm.
+    """
+
     ray.init()
 
     tryptag = TrypTag()
@@ -260,7 +266,6 @@ if __name__ == "__main__":
 
     futures = [process_gene.remote(gene, selected_genes[gene][0]) for gene in selected_genes.keys()]
     results = ray.get(futures)
-    print(results)
     for kn_lengths in results:
         for kn, data in kn_lengths.items():
             if kn not in all_kn_lengths:
@@ -274,8 +279,6 @@ if __name__ == "__main__":
             all_kn_lengths[kn]['corrected_lengths'].extend(data['corrected_lengths'])
             all_kn_lengths[kn]['flagella_lengths'].extend(data['flagella_lengths'])
             all_kn_lengths[kn]['corrected_flagella_lengths'].extend(data['corrected_flagella_lengths'])
-
-    import matplotlib.pyplot as plt
 
     font_size = 14
     plt.rcParams.update({'font.size': font_size})

@@ -1,5 +1,7 @@
-from PIL import Image
 import os
+
+from PIL import Image
+
 
 def resize_images(input_dir, output_dir, new_size):
     if not os.path.exists(output_dir):

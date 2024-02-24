@@ -12,7 +12,7 @@ from matplotlib import pyplot as plt, patches
 from scipy import ndimage
 from sklearnex import patch_sklearn
 
-from constants import SELECTED_GENES
+from constants import SELECTED_GENES, DATASET_DIR, MODELS_DIR
 
 patch_sklearn()
 
@@ -159,8 +159,8 @@ class Field:
         major_axes_clean = remove_outliers(major_axes)
 
         # Perform 1D clustering on cleaned minor and major axes separately
-        kmeans_minor = KMeans(n_clusters=2).fit(np.array(minor_axes_clean).reshape(-1, 1))
-        kmeans_major = KMeans(n_clusters=2).fit(np.array(major_axes_clean).reshape(-1, 1))
+        kmeans_minor = KMeans(n_clusters=2, n_init="auto").fit(np.array(minor_axes_clean).reshape(-1, 1))
+        kmeans_major = KMeans(n_clusters=2, n_init="auto").fit(np.array(major_axes_clean).reshape(-1, 1))
 
         nuclei_label_minor = np.argmax(np.bincount(kmeans_minor.labels_))
         nuclei_label_major = np.argmax(np.bincount(kmeans_major.labels_))
@@ -349,17 +349,17 @@ class Field:
         return tiff.imread(img_path)
 
     def _get_model_name_and_path(self, channel):
-        models_dir = "kmeans_models"
+        os.makedirs(MODELS_DIR, exist_ok=True)
         basepath_key = self.base_path.split("\\")[-2] + "_channel_" + str(channel)
-        model_files = os.listdir(models_dir)
+        model_files = os.listdir(MODELS_DIR)
 
         matching_models = [model for model in model_files if basepath_key in model]
         if not matching_models:
-            raise FileNotFoundError(f"No model files found for {basepath_key} in {models_dir}.")
+            raise FileNotFoundError(f"No model files found for {basepath_key} in {MODELS_DIR}.")
 
         # Select the first model
         model_name = matching_models[0]
-        model_path = os.path.join(models_dir, model_name)
+        model_path = os.path.join(MODELS_DIR, model_name)
 
         return model_name, model_path
 
@@ -528,7 +528,9 @@ def stack_images_and_train_kmeans(directory, channel, n_clusters, genes_of_inter
 
     # dont set k too high, you will run out of memory
     files = random.sample(files, k=max(len(files), min(30, len(files))))
-    image_pixels = 2560 * 2160
+    image_width = 2560
+    image_height = 2160
+    image_pixels = image_width * image_height
     print(f"Training KMeans model on {len(files) * image_pixels} datapoints")
 
     stacked_images = np.zeros((image_pixels * len(files), 1))
@@ -539,43 +541,37 @@ def stack_images_and_train_kmeans(directory, channel, n_clusters, genes_of_inter
         stacked_images[image_pixels * i:image_pixels * (i + 1), :] = img_channel
 
     flattened_images = stacked_images.reshape(-1, 1)
-    kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(flattened_images)
+    kmeans = KMeans(n_clusters=n_clusters, random_state=0, n_init="auto").fit(flattened_images)
     labels = kmeans.labels_
     unique_labels = np.unique(labels)
 
     gene_id = directory.split("\\")[-1]
-    model_path = os.path.join("kmeans_models", f'{gene_id}_channel_{channel}_clusters_{n_clusters}.joblib')
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    model_path = os.path.join(MODELS_DIR, f'{gene_id}_channel_{channel}_clusters_{n_clusters}.joblib')
     dump(kmeans, model_path)
 
     print(f"KMeans model trained and saved to {model_path}")
 
     if show_images:
-        img_chunk = flattened_images[:image_pixels].reshape(2160, 2560)
-        labels_chunk = labels[:image_pixels].reshape(2160, 2560)
+        # Reshape the first chunk of the flattened images to its original dimensions for display
+        img_chunk = flattened_images[:image_pixels].reshape(image_height, image_width)
+        labels_chunk = labels[:image_pixels].reshape(image_height, image_width)
 
         num_clusters = len(unique_labels)
-        num_cols = 3  # You can adjust this
-        num_rows = max(num_clusters // num_cols, 1)
-        if num_clusters % num_cols:
-            num_rows += 1  # Add an extra row if the clusters cannot be arranged evenly
+        num_cols = 2  # Set the desired number of columns
+        num_rows = (num_clusters + num_cols - 1) // num_cols  # Calculate the required number of rows
 
-        fig, ax = plt.subplots(num_rows, num_cols, figsize=(10, num_rows * 3))
-        if num_clusters == 1:
-            ax = np.array([ax])  # Convert ax to a 1D numpy array for consistent indexing
+        fig, axs = plt.subplots(num_rows, num_cols, figsize=(10, num_rows * 3), squeeze=False)
+        axs = axs.flatten()  # Flatten the array of axes for easy iteration
 
         for i, label in enumerate(unique_labels):
             cluster_mask = (labels_chunk == label)
+            axs[i].imshow(img_chunk * cluster_mask, cmap='gray')
+            axs[i].set_title(f'Cluster {label}')
+            axs[i].axis('off')  # Optionally turn off axes for a cleaner look
 
-            row_idx = i // num_cols
-            col_idx = i % num_cols
-
-            # Handling both cases when there is 1 or multiple subplots
-            if num_rows > 1:
-                ax[row_idx, col_idx].imshow(img_chunk * cluster_mask, cmap='gray')
-                ax[row_idx, col_idx].set_title(f'Cluster {label}')
-            else:
-                ax[col_idx].imshow(img_chunk * cluster_mask, cmap='gray')
-                ax[col_idx].set_title(f'Cluster {label}')
+        for ax in axs[num_clusters:]:  # Turn off unused subplots
+            ax.axis('off')
 
         plt.suptitle('K-Means Clustering' + f' (k={num_clusters})' + f' - {os.path.basename(model_path)}')
         plt.tight_layout()
@@ -583,15 +579,15 @@ def stack_images_and_train_kmeans(directory, channel, n_clusters, genes_of_inter
 
 
 if __name__ == '__main__':
-    base_directory = r'E:\PycharmProjects\BA\dataset\raw'
+    """
+    This should be run once to train a KMeans model for each gene and each channel.
+    It will create a kmeans_models directory in the current directory and store the trained KMeans models there.
+    Additionally, it will save the images of the KMeans clusters under dataset
+    """
 
-    # train 1 KMeans models for each channel and each gene
     # phase, channel 0, clusters 4
     # mng, channel 1, clusters 2
     # dna, channel 2, clusters 2
-
-    selected_genes = SELECTED_GENES
-
     # Define channels and their respective cluster settings
     channels_and_clusters = {
         0: 4,  # phase
@@ -599,23 +595,22 @@ if __name__ == '__main__':
         2: 2  # dna
     }
 
+    # Whether to train a KMeans model for each gene and each channel
+    # If kmeans_models directory already exists and you didn't change the parameters from channels_and_clusters above, set CLUSTERING to False
+    CLUSTERING = True
 
-    def train_and_save_all(clustering=True):
-        # Train a KMeans model for each gene and each channel
-        for gene in selected_genes.keys():
-            # Update directory path for the current gene
-            gene_directory = os.path.join(base_directory, gene)
+    # This should only be set to True when you experiment with the number of clusters and want to see the results
+    SHOW_IMAGES = False
 
-            if clustering:
-                for channel, n_clusters in channels_and_clusters.items():
-                    print(f"Training KMeans for gene {gene}, channel {channel} with {n_clusters} clusters.")
-                    stack_images_and_train_kmeans(gene_directory, channel, n_clusters, gene, False)
+    # Train a KMeans model for each gene and each channel
+    for gene in SELECTED_GENES.keys():
+        # Update directory path for the current gene
+        gene_directory = os.path.join(DATASET_DIR, gene)
 
-            TrypTagDataset(directory=gene_directory, genes_of_interest=[gene])
+        if CLUSTERING:
+            for channel, n_clusters in channels_and_clusters.items():
+                print(f"Training KMeans for gene {gene}, channel {channel} with {n_clusters} clusters.")
+                stack_images_and_train_kmeans(gene_directory, channel, n_clusters, gene, SHOW_IMAGES)
 
-
-    train_and_save_all(False)
-
-# for gene in selected_genes.keys():
-#     gene_directory = os.path.join(base_directory, gene)
-#     TrypTagDataset(directory=gene_directory, genes_of_interest=[gene])
+        # Create a dataset for the current gene
+        TrypTagDataset(directory=gene_directory, genes_of_interest=[gene])

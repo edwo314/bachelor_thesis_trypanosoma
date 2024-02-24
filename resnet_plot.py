@@ -11,6 +11,8 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
+os.makedirs("assets", exist_ok=True)
+
 
 # Step 1: Preprocessing
 def load_images_from_folder(folder):
@@ -49,7 +51,7 @@ tsne = TSNE(n_components=2, random_state=0)
 tsne_result = tsne.fit_transform(features)
 
 # Step 4: Clustering
-kmeans = KMeans(n_clusters=6, random_state=0).fit(pca_result)
+kmeans = KMeans(n_clusters=6, random_state=0, n_init="auto").fit(pca_result)
 
 # Create a DataFrame for Plotly
 df = pd.DataFrame({

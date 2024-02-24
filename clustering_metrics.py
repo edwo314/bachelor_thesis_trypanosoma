@@ -1,8 +1,11 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
+from cv2 import resize
 from matplotlib.ticker import MaxNLocator
 from sklearnex import patch_sklearn
+
+from constants import DATASET_DIR
 
 # sklearnex will use intel extensions for sklearn
 patch_sklearn()
@@ -11,34 +14,33 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 import ray
 from ray import get
-from skimage.transform import resize
 
 ray.init()
 
 
-def function(image: str, channel: int, silhouette_range: range):
+def get_clustering_metrics(image: str, channel: int, silhouette_range: range, resize_factor: int = 4):
     img = tifffile.imread(image)[channel, :, :]
 
     # resizing the images is recommended for silhouette score
-    # img = resize(img, (img.shape[0] // 4, img.shape[1] // 4))
+    img = resize(img, (img.shape[0] // resize_factor, img.shape[1] // resize_factor))
     middle_x = img.shape[0] // 2
     middle_y = img.shape[1] // 2
-    middle_size = 512
+    middle_size = 512 // resize_factor
 
-    img = img[middle_x - middle_size // 2 : middle_x + middle_size // 2,
-                         middle_y - middle_size // 2 : middle_y + middle_size // 2]
+    img = img[middle_x - middle_size // 2: middle_x + middle_size // 2,
+          middle_y - middle_size // 2: middle_y + middle_size // 2]
 
     @ray.remote
     def compute_kmeans_and_scores_for_image(k: int):
         img_array = np.expand_dims(img, axis=0)
         pixel_array = img_array.reshape(-1, 1)
 
-        kmeans = KMeans(n_clusters=k, random_state=42)
+        kmeans = KMeans(n_clusters=k, random_state=42, n_init="auto")
         labels = kmeans.fit_predict(pixel_array)
         silhouette = silhouette_score(pixel_array, labels, random_state=42)  # calculate silhouette score
         clustered_image = labels.reshape(img_array.shape)
         inertia = kmeans.inertia_
-        return inertia, silhouette, clustered_image,
+        return inertia, silhouette, clustered_image
 
     # Start all tasks in parallel
     results = [compute_kmeans_and_scores_for_image.remote(k) for k in silhouette_range]
@@ -57,7 +59,6 @@ def function(image: str, channel: int, silhouette_range: range):
         silhouette_scores.append(silhouette)
         clustered_images_list.append(clustered_image)
 
-    # Determine the figure size based on the number of subplots
     fig_width = 5 * (len(silhouette_range) + 1)
     fig_height = 5
 
@@ -69,13 +70,13 @@ def function(image: str, channel: int, silhouette_range: range):
     for j, clustered_image in enumerate(clustered_images_list):
         K = silhouette_range[j]
         cmap = plt.get_cmap('nipy_spectral', K)
-        axes[j+1].imshow(clustered_image[0], cmap=cmap, aspect='auto')
-        axes[j+1].set_title(f'K={K}')
-        axes[j+1].axis('off')
+        axes[j + 1].imshow(clustered_image[0], cmap=cmap, aspect='auto')
+        axes[j + 1].set_title(f'K={K}')
+        axes[j + 1].axis('off')
 
     fig.suptitle('Clustered Image with different K', fontsize=16)
-    plt.tight_layout()  # Minimize whitespace between subplots
-    plt.savefig(f'clustered_image_channel_{channel}.png')  # Save the figure
+    plt.tight_layout()
+    plt.savefig(f'clustered_image_channel_{channel}.png')
     plt.show()
 
     # Plotting the silhouette scores
@@ -84,9 +85,9 @@ def function(image: str, channel: int, silhouette_range: range):
     plt.title('Silhouette Scores')
     plt.xlabel('Number of clusters')
     plt.ylabel('Silhouette Score')
-    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))  # Ensure x-ticks are integers
+    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
     plt.grid(True)
-    plt.savefig(f'silhouette_scores_channel_{channel}_full.png')  # Save the figure
+    plt.savefig(f'silhouette_scores_channel_{channel}_full.png')
     plt.show()
 
     # Plotting the Elbow Method
@@ -95,14 +96,28 @@ def function(image: str, channel: int, silhouette_range: range):
     plt.title('Elbow Method')
     plt.xlabel('Number of clusters')
     plt.ylabel('Inertia')
-    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))  # Ensure x-ticks are integers
+    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
     plt.grid(True)
-    plt.savefig(f'elbow_method_channel_{channel}_full.png')  # Save the figure
+    plt.savefig(f'elbow_method_channel_{channel}_full.png')
     plt.show()
 
 
 if __name__ == "__main__":
-    # pairs is setting the number of clusters and the channel to be used
+    """
+    Generates plots for the Elbow Method and Silhouette Scores for a given input image to evaluate the optimal number of clusters.
+    It saves 3 plots for each channel: elbow method, silhouette scores and clustered image.
+
+    WARNING: Running it with resize factor 1 will take a very long time (~20 minutes), as the silhouette score calculation is very expensive.
+    If that is too long for you to wait, you can set resize_factor to a larger integer like 4 or 8. However, as a consequence the image quality will decrease and the
+    metrics won't be as accurate. Resize factor 4 will decrease the number of pixels by a factor of 16.
+    """
+
+    # pairs is a tuple of tuples with (number of clusters, channel)
+    # 4 clusters for channel 0
+    # 2 clusters for channel 1
+    # 2 clusters for channel 2
+    # e.g we expect a minimum of 4 clusters in the phase channel, it will calculate it for 4, 5, 6, 7 clusters, this is set by the silhouette range
     pairs = ((4, 0), (2, 1), (2, 2))
-    for k, c in pairs:
-        function(r"dataset\raw\Tb927.3.4290\Tb927.3.4290_4_N_1.tif", c, range(k, k + 4))
+    for clusters, channel in pairs:
+        get_clustering_metrics(rf"{DATASET_DIR}\Tb927.3.4290\Tb927.3.4290_4_N_1.tif", channel=channel,
+                               silhouette_range=range(clusters, clusters + 4), resize_factor=4)

@@ -10,3 +10,6 @@ SELECTED_GENES = {
     "Tb927.11.15100": ["c", "procyclic", "http://preview.tryptag.org/?query=Tb927.11.15100"],
     "Tb927.3.4290": ["n", "procyclic", "http://preview.tryptag.org/?query=Tb927.3.4290"],
 }
+
+DATASET_DIR = "./dataset"
+MODELS_DIR = "./kmeans_models"

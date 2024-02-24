@@ -10,11 +10,10 @@ from tryptag import TrypTag, CellLine
 """
 This script uses the TrypTag localisation search to find genes that are localised to the paraflagellar rod.
 Im using paraflagellar rod since "there are no clear examples of proteins concentrated in 
-the flagellar cytoplasm in trypanosomatids." (Cellular landmarks of Trypanosoma brucei and Leishmania mexicana))
+the flagellar cytoplasm in trypanosomatids." (Cellular landmarks of Trypanosoma brucei and Leishmania mexicana)
 
-It uses Selenium to scrape the percentile score for each gene from the TrypTag website.
-Then it creates a ranking for the percentile scores.
-Then I manually select the top genes and add them to the list of genes to be analysed, and to be part of the dataset.
+It uses Selenium to scrape the percentile score for each gene from the TrypTag website, then it creates a ranking for the percentile scores.
+After that I manually select the best genes and add them to the list of genes to be analysed, and to be part of the dataset.
 I decide based on the image clarity. Only the paraflagellar rod/flagellum should be brightly highlighted and the rest of the cell should be dark.
 """
 
