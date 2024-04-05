@@ -1,3 +1,4 @@
+import json
 import os
 
 import cv2
@@ -8,10 +9,13 @@ import scipy
 import skimage
 from joblib import load
 from matplotlib import patches
-from tryptag import TrypTag, CellLine, tryptools
+from matplotlib.ticker import MaxNLocator
+from tryptag import CellLine, tryptools, TrypTag
 from tryptag.tryptools.tryptools import cell_morphology_analysis, _mask_pruned_skeleton
 
 from constants import SELECTED_GENES, MODELS_DIR
+
+kn_configurations = ["1K1N", "2K1N", "2K2N"]
 
 
 def load_model(gene):
@@ -139,7 +143,7 @@ def process_gene(gene, terminus):
                 mng_channel = cell_image.mng
                 mng_mask = perform_kmeans_clustering(mng_channel, model)
                 largest_component_mask = get_largest_overlapping_component(mng_mask,
-                                                                           cell_image.phase_mask)  # Create a 3-channel image to overlay the largest component mask and the phase mask with different colors
+                                                                           cell_image.phase_mask)
                 if largest_component_mask is None:
                     continue
 
@@ -174,21 +178,15 @@ def process_gene(gene, terminus):
                 by_label = dict(zip(labels, handles))
                 tryptools_plot.legend(by_label.values(), by_label.keys(), loc='upper right')
 
-                # Masking zero values in the phase_mask
                 masked_phase_mask = np.ma.masked_equal(cell_image.phase_mask, 0)
 
-                # Masking zero values in the largest_component_mask
                 masked_largest_component_mask = np.ma.masked_equal(largest_component_mask, 0)
 
                 phase_max_value = np.max(cell_image.phase_mask)
                 largest_component_max_value = np.max(largest_component_mask)
 
-                # Display the phase mask in green with a specific alpha value (e.g., 0.5)
-                # Set vmin to a small value greater than zero and vmax to the maximum value in the phase mask
                 tryptools_plot.imshow(masked_phase_mask, cmap='Greens', alpha=0.5, vmin=0.01, vmax=phase_max_value)
 
-                # Overlay the largest component mask in red with a different alpha value (e.g., 0.5)
-                # Set vmin to a small value greater than zero and vmax to the maximum value in the largest component mask
                 tryptools_plot.imshow(masked_largest_component_mask, cmap='Reds', alpha=0.5, vmin=0.01,
                                       vmax=largest_component_max_value)
 
@@ -255,7 +253,7 @@ def plot_histograms(kn_data):
     for kn, data in all_kn_lengths.items():
         plt.figure(figsize=(16, 7))
 
-        num_samples = len(data['lengths'])  # Number of samples for each kn
+        num_samples = len(data['lengths'])
 
         mean_length = np.mean(data['lengths'])
         std_length = np.std(data['lengths'])
@@ -288,7 +286,7 @@ def plot_histograms(kn_data):
     for kn, data in all_kn_lengths.items():
         plt.figure(figsize=(16, 7))
 
-        num_samples = len(data['flagella_lengths'])  # Number of samples for each kn
+        num_samples = len(data['flagella_lengths'])
 
         mean_length = np.mean(data['flagella_lengths'])
         std_length = np.std(data['flagella_lengths'])
@@ -319,10 +317,132 @@ def plot_histograms(kn_data):
         plt.show()
 
 
+def load_data_for_gene(gene):
+    aggregate_data = {}
+    with open(f'tmp/all_runs_{gene}_all_kn_lengths.json', 'r') as file:
+        data = json.load(file)
+    for run in data:
+        for kn_config in kn_configurations:
+            if kn_config not in aggregate_data:
+                aggregate_data[kn_config] = {'lengths': [], 'flagella_lengths': []}
+            aggregate_data[kn_config]['lengths'].append(run[kn_config]['lengths'])
+            aggregate_data[kn_config]['flagella_lengths'].append(run[kn_config]['flagella_lengths'])
+    return aggregate_data
+
+
+def add_errorbar(ax, data):
+    means = [np.mean(run_data) for run_data in data]
+    std_devs = [np.std(run_data) for run_data in data]
+    ax.errorbar(range(1, len(means) + 1), means, yerr=std_devs, fmt='o', color='royalblue',
+                ecolor='royalblue', elinewidth=2, capsize=4, capthick=2)
+
+
+def boxplot_for_gene_runs(gene):
+    data = load_data_for_gene(gene)
+
+    for kn_config in data:
+        fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(18, 8), dpi=80)
+
+        # Box plot properties
+        boxprops = dict(linestyle='-', linewidth=3, color='darkgoldenrod')
+        medianprops = dict(linestyle='-', linewidth=2.5, color='firebrick')
+
+        # Box plot for lengths
+        axs[0].boxplot(data[kn_config]['lengths'], boxprops=boxprops, medianprops=medianprops)
+        add_errorbar(axs[0], data[kn_config]['lengths'])  # Add mean/std annotations
+        axs[0].set_title(f'Length of {kn_config} cells for gene {gene}')
+        axs[0].yaxis.grid(True)
+        axs[0].set_xticks([y + 1 for y in range(len(data[kn_config]['lengths']))])
+        axs[0].set_xlabel('Run')
+        axs[0].set_ylabel('Length in µm')
+
+        # Box plot for flagella_lengths
+        axs[1].boxplot(data[kn_config]['flagella_lengths'], boxprops=boxprops, medianprops=medianprops)
+        add_errorbar(axs[1], data[kn_config]['flagella_lengths'])  # Add mean/std annotations
+        axs[1].set_title(f'Flagella Lengths of {kn_config} cells for gene {gene}')
+        axs[1].yaxis.grid(True)
+        axs[1].set_xticks([y + 1 for y in range(len(data[kn_config]['flagella_lengths']))])
+        axs[1].set_xlabel('Run')
+        axs[1].set_ylabel('Flagellum Length in µm')
+
+        plt.tight_layout()
+        plt.show()
+
+
+def plot_number_of_datapoints(gene):
+    data = load_data_for_gene(gene)
+
+    for kn_config in data:
+        num_data_points_lengths = [len(lengths) for lengths in data[kn_config]['lengths']]
+        num_data_points_flagella = [len(f_lengths) for f_lengths in data[kn_config]['flagella_lengths']]
+
+        fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(18, 8), dpi=80)
+
+        # Line plot for number of lengths data points
+        axs[0].plot(range(1, 11), num_data_points_lengths, marker='o', linestyle='-', color='blue')
+        axs[0].set_title(f'Number of Length Data Points of {kn_config} cells of gene {gene}')
+        axs[0].grid(True)
+        axs[0].set_xticks(range(1, 11))
+        axs[0].set_xlabel('Run')
+        axs[0].set_ylabel('Number of Data Points')
+        axs[0].yaxis.set_major_locator(MaxNLocator(integer=True))
+
+        # Line plot for number of flagella_lengths data points
+        axs[1].plot(range(1, 11), num_data_points_flagella, marker='o', linestyle='-', color='green')
+        axs[1].set_title(f'Number of Flagella Length Data Points of {kn_config} cells of gene {gene}')
+        axs[1].grid(True)
+        axs[1].set_xticks(range(1, 11))
+        axs[1].set_xlabel('Run')
+        axs[1].set_ylabel('Number of Data Points')
+        axs[1].yaxis.set_major_locator(MaxNLocator(integer=True))
+
+        plt.tight_layout()
+        plt.show()
+
+
+def load_and_aggregate_data(metric, kn_config, aggregate_method):
+    aggregated_data = []
+    for gene in SELECTED_GENES:
+        filename = f'tmp/all_runs_{gene}_all_kn_lengths.json'
+        with open(filename, 'r') as f:
+            data = json.load(f)
+            gene_data = [aggregate_method(run[kn_config][metric]) for run in data]
+            aggregated_data.append(gene_data)
+    return aggregated_data
+
+
+def boxplot_aggregated_for_all_genes():
+    metrics = ['lengths', 'flagella_lengths']
+    for kn_config in kn_configurations:
+        for aggregate_method_label in ["mean", "standard deviation"]:
+            fig, axs = plt.subplots(1, 2, figsize=(18, 9))
+            axs = axs.ravel()
+
+            if aggregate_method_label == "mean":
+                aggregate_method = np.mean
+            elif aggregate_method_label == "standard deviation":
+                aggregate_method = np.std
+
+            for i, metric in enumerate(metrics):
+                data = load_and_aggregate_data(metric, kn_config, aggregate_method)
+                axs[i].boxplot(data)
+                axs[i].set_title("Comparison between genes for {} of {} cells".format(metric, kn_config))
+                axs[i].set_xticks(range(1, len(SELECTED_GENES) + 1))
+                axs[i].set_xticklabels(SELECTED_GENES.keys(), rotation=45, ha="right")
+                axs[i].set_ylabel(f'{aggregate_method_label} in µm')
+                axs[i].grid(True)
+
+                # Adding mean and standard deviation stats on top of each boxplot
+                add_errorbar(axs[i], data)
+
+            plt.tight_layout()
+            plt.show()
+
+
 if __name__ == "__main__":
     """
     It will first create all the images and save them under ./flagella then it will calculate the statistics and save the images in the base directory for each KN configuration.
-    Don't mind the RuntimeWarning from matplotlib, this is an error due to the multiprocessing.
+    Don't mind the RuntimeWarning from matplotlib, this is an error due to the multiprocessing. It will take a few minutes to run through all genes and analyse all cells.
     
     The actual statistics might vary by a few samples due to the randomness of the algorithm.
     """
@@ -347,3 +467,50 @@ if __name__ == "__main__":
             all_kn_lengths[kn]['corrected_flagella_lengths'].extend(data['corrected_flagella_lengths'])
 
     plot_histograms(all_kn_lengths)
+
+
+    # Uncomment this if you want to recreate the plots for showing that the K-Means based segmentation doesn't impact the results.
+    # Before running this you also need to uncomment or remove the @ray.remote for the process_gene function which is defined in this file
+    # It will run through all genes in the dataset 10 times, each time with a slightly differently trained K-Means and save the data under a new directory /tmp.
+    # Then it will create the plots by reading the different files
+    # It isn't multithreaded, so it might take 3-5 hours if you use 10 runs for each of the 10 genes.
+    """
+    os.makedirs("tmp", exist_ok=True)  # Prepare the directory beforehand
+    runs = 10
+
+    for gene in SELECTED_GENES:
+        from compute_segmentation_masks_and_dataset import main
+
+        tryptag = TrypTag()
+        all_runs_data = []
+
+        for i in range(1, runs + 1):
+            main(clustering=True, channels_and_clusters={1: 2}, show_images=False, selected_genes=[gene])
+            all_kn_lengths = {}
+            result = process_gene(gene, SELECTED_GENES[gene][0])
+
+            for kn, data in result.items():
+                if kn not in all_kn_lengths:
+                    all_kn_lengths[kn] = {
+                        'lengths': [],
+                        'corrected_lengths': [],
+                        'flagella_lengths': [],
+                        'corrected_flagella_lengths': []
+                    }
+                for key in ['lengths', 'corrected_lengths', 'flagella_lengths', 'corrected_flagella_lengths']:
+                    all_kn_lengths[kn][key].extend(data[key])
+
+            all_runs_data.append(all_kn_lengths)
+
+        # Save combined data for all runs of this gene
+        with open(f'tmp/all_runs_{gene}_all_kn_lengths.json', 'w') as f:
+            json.dump(all_runs_data, f)
+
+    # show plot for data of different runs of this one gene
+    gene = "Tb927.10.11300"
+    boxplot_for_gene_runs(gene)
+    plot_number_of_datapoints(gene)
+
+    # boxplot of mean and standard deviation of 10 runs for each gene
+    boxplot_aggregated_for_all_genes()
+    """

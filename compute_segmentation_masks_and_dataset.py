@@ -13,7 +13,7 @@ from scipy import ndimage
 from sklearnex import patch_sklearn
 from tqdm import tqdm
 
-from constants import SELECTED_GENES, DATASET_DIR, MODELS_DIR
+from constants import DATASET_DIR, MODELS_DIR, SELECTED_GENES
 
 patch_sklearn()
 
@@ -221,7 +221,8 @@ class Cell:
 
     def crop_image(self, img):
         x, y, w, h, _ = self.stats
-        return img[y:y + h, x:x + w]
+        offset = 25
+        return img[y - offset:y + h + offset, x - offset:x + w + offset]
 
 
 @dataclass
@@ -491,7 +492,8 @@ class Field:
         model_name, model_path = self._get_model_name_and_path(0)
         clustered_binary_image = self._get_best_mask(img, thr_img, model_name)
         hole_filled_mask = fill_holes(clustered_binary_image)
-        filtered_mask = filter_islands_by_size(hole_filled_mask, min_size=1000, max_size=5000, img=img, show_images=show_images)
+        filtered_mask = filter_islands_by_size(hole_filled_mask, min_size=1000, max_size=5000, img=img,
+                                               show_images=show_images)
 
         if show_images:
             # Create a plot with subplots for each step
@@ -583,17 +585,18 @@ class TrypTagDataset:
             self.fields.extend(results)
             pbar.update(len(done))
         pbar.close()
+        ray.shutdown()
 
     def total_number_of_cells(self):
         return sum([len(field.cells) for field in self.fields])
 
 
-if __name__ == '__main__':
+def main(clustering=True, channels_and_clusters=None, show_images=False, selected_genes=None):
     """
-    This should be run once to train a KMeans model for each gene and each channel.
-    It will create a kmeans_models directory in the current directory and store the models there.
-    Additionally, it will save the segmented images under dataset
-    """
+        This should be run once to train a KMeans model for each gene and each channel.
+        It will create a kmeans_models directory in the current directory and store the models there.
+        Additionally, it will save the segmented images under dataset
+        """
 
     # phase, channel 0, clusters 4
     # mng, channel 1, clusters 2
@@ -603,17 +606,19 @@ if __name__ == '__main__':
         0: 4,  # phase
         1: 2,  # mng
         2: 2  # dna
-    }
+    } if channels_and_clusters is None else channels_and_clusters
 
     # Whether to train a KMeans model for each gene and each channel
     # If kmeans_models directory already exists and you didn't change the parameters from channels_and_clusters above, set CLUSTERING to False
-    CLUSTERING = True
+    CLUSTERING = clustering
 
     # This should only be set to True when you experiment with the number of clusters and want to see the results
-    SHOW_IMAGES = False
+    SHOW_IMAGES = show_images
+
+    selected_genes = SELECTED_GENES if selected_genes is None else selected_genes
 
     # Train a KMeans model for each gene and each channel
-    for gene in SELECTED_GENES.keys():
+    for gene in selected_genes:
         # Update directory path for the current gene
         gene_directory = os.path.join(DATASET_DIR, gene)
 
@@ -624,3 +629,7 @@ if __name__ == '__main__':
 
         # uses the trained KMeans models and will save the segmentation masks and the dataset
         TrypTagDataset(directory=gene_directory, genes_of_interest=[gene])
+
+
+if __name__ == '__main__':
+    main()
