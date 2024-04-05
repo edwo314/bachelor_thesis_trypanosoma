@@ -264,8 +264,8 @@ def plot_histograms(kn_data):
         plt.subplot(1, 2, 1)
         plt.hist(data['lengths'], bins=50, alpha=0.7, label='Lengths', color='blue')
         plt.title(
-            f'Lengths Histogram for {kn}\nMean: {mean_length:.2f} µm | Std: {std_length:.2f} µm | Samples: {num_samples}')
-        plt.xlabel('Cell Length (µm)')
+            f'Cell Length of {kn} Cells\nMean: {mean_length:.2f} µm | Std: {std_length:.2f} µm | Samples: {num_samples}')
+        plt.xlabel('Cell Length in µm')
         plt.ylabel('Frequency')
         plt.grid(axis='y', linestyle='--', alpha=0.7)
         plt.legend(loc="upper right")
@@ -273,8 +273,8 @@ def plot_histograms(kn_data):
         plt.subplot(1, 2, 2)
         plt.hist(data['corrected_lengths'], bins=50, alpha=0.7, label='Corrected Lengths', color='r')
         plt.title(
-            f'Corrected Lengths Histogram for {kn}\nMean: {mean_corrected_length:.2f} µm | Std: {std_corrected_length:.2f} µm | Samples: {num_samples}')
-        plt.xlabel('Corrected Cell Length (µm)')
+            f'Corrected Cell Length of {kn} Cells\nMean: {mean_corrected_length:.2f} µm | Std: {std_corrected_length:.2f} µm | Samples: {num_samples}')
+        plt.xlabel('Corrected Cell Length in µm')
         plt.ylabel('Frequency')
         plt.grid(axis='y', linestyle='--', alpha=0.7)
         plt.legend(loc="upper right")
@@ -297,8 +297,8 @@ def plot_histograms(kn_data):
         plt.subplot(1, 2, 1)
         plt.hist(data['flagella_lengths'], bins=50, alpha=0.7, label='Lengths', color='blue')
         plt.title(
-            f'Flagella Lengths Histogram for {kn}\nMean: {mean_length:.2f} µm | Std: {std_length:.2f} µm | Samples: {num_samples}')
-        plt.xlabel('Flagella Length (µm)')
+            f'Flagellum Length of {kn} Cells\nMean: {mean_length:.2f} µm | Std: {std_length:.2f} µm | Samples: {num_samples}')
+        plt.xlabel('Flagellum Length in µm')
         plt.ylabel('Frequency')
         plt.grid(axis='y', linestyle='--', alpha=0.7)
         plt.legend(loc="upper right")
@@ -306,8 +306,8 @@ def plot_histograms(kn_data):
         plt.subplot(1, 2, 2)
         plt.hist(data['corrected_flagella_lengths'], bins=50, alpha=0.7, label='Corrected Lengths', color='r')
         plt.title(
-            f'Flagella Corrected Lengths Histogram for {kn}\nMean: {mean_corrected_length:.2f} µm | Std: {std_corrected_length:.2f} µm | Samples: {num_samples}')
-        plt.xlabel('Flagella Corrected Cell Length (µm)')
+            f'Corrected Flagellum Length of {kn} Cells\nMean: {mean_corrected_length:.2f} µm | Std: {std_corrected_length:.2f} µm | Samples: {num_samples}')
+        plt.xlabel('Corrected Flagellum Length in µm')
         plt.ylabel('Frequency')
         plt.grid(axis='y', linestyle='--', alpha=0.7)
         plt.legend(loc="upper right")
@@ -341,7 +341,7 @@ def boxplot_for_gene_runs(gene):
     data = load_data_for_gene(gene)
 
     for kn_config in data:
-        fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(18, 8), dpi=80)
+        fig, axs = plt.subplots(1, 2, figsize=(18, 9))
 
         # Box plot properties
         boxprops = dict(linestyle='-', linewidth=3, color='darkgoldenrod')
@@ -350,7 +350,7 @@ def boxplot_for_gene_runs(gene):
         # Box plot for lengths
         axs[0].boxplot(data[kn_config]['lengths'], boxprops=boxprops, medianprops=medianprops)
         add_errorbar(axs[0], data[kn_config]['lengths'])  # Add mean/std annotations
-        axs[0].set_title(f'Length of {kn_config} cells for gene {gene}')
+        axs[0].set_title(f'Length of {kn_config} Cells for Gene {gene}')
         axs[0].yaxis.grid(True)
         axs[0].set_xticks([y + 1 for y in range(len(data[kn_config]['lengths']))])
         axs[0].set_xlabel('Run')
@@ -359,7 +359,7 @@ def boxplot_for_gene_runs(gene):
         # Box plot for flagella_lengths
         axs[1].boxplot(data[kn_config]['flagella_lengths'], boxprops=boxprops, medianprops=medianprops)
         add_errorbar(axs[1], data[kn_config]['flagella_lengths'])  # Add mean/std annotations
-        axs[1].set_title(f'Flagella Lengths of {kn_config} cells for gene {gene}')
+        axs[1].set_title(f'Flagellum Length of {kn_config} Cells for Gene {gene}')
         axs[1].yaxis.grid(True)
         axs[1].set_xticks([y + 1 for y in range(len(data[kn_config]['flagella_lengths']))])
         axs[1].set_xlabel('Run')
@@ -376,24 +376,24 @@ def plot_number_of_datapoints(gene):
         num_data_points_lengths = [len(lengths) for lengths in data[kn_config]['lengths']]
         num_data_points_flagella = [len(f_lengths) for f_lengths in data[kn_config]['flagella_lengths']]
 
-        fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(18, 8), dpi=80)
+        fig, axs = plt.subplots(1, 2, figsize=(18, 9))
 
         # Line plot for number of lengths data points
         axs[0].plot(range(1, 11), num_data_points_lengths, marker='o', linestyle='-', color='blue')
-        axs[0].set_title(f'Number of Length Data Points of {kn_config} cells of gene {gene}')
+        axs[0].set_title(f'Number of Samples for the Length of {kn_config} Cells with Gene {gene}')
         axs[0].grid(True)
         axs[0].set_xticks(range(1, 11))
         axs[0].set_xlabel('Run')
-        axs[0].set_ylabel('Number of Data Points')
+        axs[0].set_ylabel('Number of Samples')
         axs[0].yaxis.set_major_locator(MaxNLocator(integer=True))
 
         # Line plot for number of flagella_lengths data points
         axs[1].plot(range(1, 11), num_data_points_flagella, marker='o', linestyle='-', color='green')
-        axs[1].set_title(f'Number of Flagella Length Data Points of {kn_config} cells of gene {gene}')
+        axs[1].set_title(f'Number of Samples for the Flagellum Length of {kn_config} Cells with Gene {gene}')
         axs[1].grid(True)
         axs[1].set_xticks(range(1, 11))
         axs[1].set_xlabel('Run')
-        axs[1].set_ylabel('Number of Data Points')
+        axs[1].set_ylabel('Number of Samples')
         axs[1].yaxis.set_major_locator(MaxNLocator(integer=True))
 
         plt.tight_layout()
@@ -426,10 +426,10 @@ def boxplot_aggregated_for_all_genes():
             for i, metric in enumerate(metrics):
                 data = load_and_aggregate_data(metric, kn_config, aggregate_method)
                 axs[i].boxplot(data)
-                axs[i].set_title("Comparison between genes for {} of {} cells".format(metric, kn_config))
+                axs[i].set_title("{} of {} Across Different Genes in {} Cells".format(aggregate_method_label.title(), metric.replace("_"," ").title(), kn_config.title()))
                 axs[i].set_xticks(range(1, len(SELECTED_GENES) + 1))
                 axs[i].set_xticklabels(SELECTED_GENES.keys(), rotation=45, ha="right")
-                axs[i].set_ylabel(f'{aggregate_method_label} in µm')
+                axs[i].set_ylabel(f'{aggregate_method_label.title()} of {metric.replace("_"," ").title()} in µm')
                 axs[i].grid(True)
 
                 # Adding mean and standard deviation stats on top of each boxplot
