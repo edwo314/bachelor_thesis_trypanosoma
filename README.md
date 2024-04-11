@@ -1,6 +1,7 @@
 # Bachelor Thesis: Trypanosoma Code Repository
 
-This repository contains the code used for generating plots and statistics in my Bachelor's thesis related to *Trypanosoma*. The code is provided "AS IS", without warranty of completeness or functionality, as it was created for specific, non-general purposes.
+This repository contains the code used for generating plots and statistics in my Bachelor's thesis related to *Trypanosoma*. It is also contained in this repository under `thesis.pdf`.
+The code is provided "AS IS", without warranty of completeness or functionality, as it was created for specific, non-general purposes.
 
 ## Disclaimer
 - The code may not be user-friendly, as it was not intended for use by the general public. It is rather a collection of scripts than a cohesive program.
