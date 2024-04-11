@@ -18,7 +18,7 @@ The code is provided "AS IS", without warranty of completeness or functionality,
 4. Before running each file read them. Some contain additional information on what they do, how to use them and how to avoid long waiting times.
 
 ### Modified Files from TrypTag Repository
-This repository includes modified copies of files originally from the [TrypTag GitHub repository](https://github.com/zephyris/tryptag/tree/main).
+This repository includes modified copies of function and files originally from the [TrypTag GitHub repository](https://github.com/zephyris/tryptag/tree/main).
 - `tryptag_copy.py` and `tryptools_copy.py` are altered to support the `kinetoplast_nuclei_properties_all_configurations.py` and `kinetoplast_nuclei_properties_individual_configurations.py` files by adding necessary information for ellipse reconstruction from DNA masks. Replace the original `tryptag.py` and `tryptools.py` in your virtual environment with these copies and then rename them.
 - You need this otherwise some scripts might not work.
 
@@ -43,8 +43,8 @@ This repository includes modified copies of files originally from the [TrypTag G
 - `multivariate_analysis.py`: Creates plots for multivariate analysis.
 - `resize_images.py` and `resnet_image_preprocessing.py`: These files resize and preprocess images for the ResNet model and prepare them for display in interactive Plotly charts.
 - `resnet_plot.py`: Generates an interactive plot showcasing the principal components of the feature vector of the ResNet50 model.
-- `tryptag_copy.py`: A potentially modified copy of `tryptag.py` from the TrypTag GitHub repository.
-- `tryptools_copy.py`: A potentially modified copy of `tryptools.py` from the TrypTag GitHub repository.
+- `tryptag_copy.py`: A modified copy of `tryptag.py` from the TrypTag GitHub repository.
+- `tryptools_copy.py`: A modified copy of `tryptools.py` from the TrypTag GitHub repository.
 
 ## Contribution & Support
 Since this code was used specifically for my Bachelor’s thesis, it is not designed for general use or ongoing support. For reference and replication purposes in academic work, you're welcome to use and modify the code while citing appropriate sources.
