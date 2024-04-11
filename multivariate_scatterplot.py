@@ -11,6 +11,7 @@ import umap.umap_ as umap
 from dash import dcc, html, Input, Output, no_update, Dash
 from joblib import load
 from matplotlib import pyplot as plt
+from scipy import stats
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
@@ -23,6 +24,7 @@ from constants import SELECTED_GENES, MODELS_DIR
 tryptag = TrypTag()
 
 os.makedirs("assets", exist_ok=True)
+
 
 def load_model(gene):
     model_name = f"{gene}_channel_1"
@@ -138,7 +140,6 @@ def calculate_midline_length(midline_analysis):
 
 @ray.remote
 def process_gene(gene, terminus):
-    kn_lengths = {}  # Dictionary to hold lengths and corrected lengths for each kn count
     model = load_model(gene)
     cell_line = CellLine(gene, terminus, "procyclic")
     rows = []
@@ -154,7 +155,6 @@ def process_gene(gene, terminus):
                     continue
 
                 morphology = cell_morphology_analysis(cell_image)
-                kn_count = morphology["count_kn"]
 
                 flagella_morphology = morphology_analysis(largest_component_mask)
 
@@ -168,14 +168,6 @@ def process_gene(gene, terminus):
                 else:
                     continue
 
-                if kn_count not in kn_lengths:
-                    kn_lengths[kn_count] = {
-                        'lengths': [],
-                        'corrected_lengths': [],
-                        'flagella_lengths': [],
-                        'corrected_flagella_lengths': []
-                    }
-
                 skeleton, distance = skimage.morphology.medial_axis(cell_image.phase_mask, return_distance=True)
                 start = morphology["anterior"]
                 end = morphology["posterior"]
@@ -183,11 +175,6 @@ def process_gene(gene, terminus):
                 distance_ant = distance[start[0], start[1]]
                 distance_post = distance[end[0], end[1]]
                 corrected_length = (distance_ant + distance_post + length)
-
-                kn_lengths[kn_count]['lengths'].append(length * tryptag.um_per_px)
-                kn_lengths[kn_count]['corrected_lengths'].append(corrected_length * tryptag.um_per_px)
-                kn_lengths[kn_count]['flagella_lengths'].append(flagella_length * tryptag.um_per_px)
-                kn_lengths[kn_count]['corrected_flagella_lengths'].append(corrected_flagella_length * tryptag.um_per_px)
 
                 signal_analysis = cell_signal_analysis(cell_image)
 
@@ -206,12 +193,17 @@ def process_gene(gene, terminus):
                         'midline_pixels': morphology['midline_pixels'],
                     }
 
+                    # add "minor_axis_length", "major_axis_length", "orientation"
+
                     for i in range(len(morphology['objects_k'])):
                         features.update({
                             f'area_k_{i}': morphology['objects_k'][i]['area'],
                             f'dna_sum_k_{i}': morphology['objects_k'][i]['dna_sum'],
                             f'dna_max_k_{i}': morphology['objects_k'][i]['dna_max'],
-                            f'midline_index_k_{i}': morphology['objects_k'][i]['midline_index']
+                            f'midline_index_k_{i}': morphology['objects_k'][i]['midline_index'],
+                            f'minor_axis_length_k_{i}': morphology['objects_k'][i]['minor_axis_length'],
+                            f'major_axis_length_k_{i}': morphology['objects_k'][i]['major_axis_length'],
+                            f'orientation_k_{i}': morphology['objects_k'][i]['orientation']
                         })
 
                     for i in range(len(morphology['objects_n'])):
@@ -219,7 +211,10 @@ def process_gene(gene, terminus):
                             f'area_n_{i}': morphology['objects_n'][i]['area'],
                             f'dna_sum_n_{i}': morphology['objects_n'][i]['dna_sum'],
                             f'dna_max_n_{i}': morphology['objects_n'][i]['dna_max'],
-                            f'midline_index_n_{i}': morphology['objects_n'][i]['midline_index']
+                            f'midline_index_n_{i}': morphology['objects_n'][i]['midline_index'],
+                            f'minor_axis_length_n_{i}': morphology['objects_n'][i]['minor_axis_length'],
+                            f'major_axis_length_n_{i}': morphology['objects_n'][i]['major_axis_length'],
+                            f'orientation_n_{i}': morphology['objects_n'][i]['orientation']
                         })
 
                     # check if image already exists
@@ -255,42 +250,118 @@ df = df.fillna(0)
 df["norm_pos_k_0"] = df["midline_index_k_0"] / df["midline_pixels"]
 df["norm_pos_n_0"] = df["midline_index_n_0"] / df["midline_pixels"]
 
-pca = PCA(n_components=2)
-
 # Create a scaler object
 sc = StandardScaler()
 
+features = ['cell_area', 'corrected_length', 'corrected_flagella_length', 'area_k_0',
+            'area_n_0', 'dna_sum_k_0', 'dna_sum_n_0', 'norm_pos_k_0', 'norm_pos_n_0',
+            'major_axis_length_k_0', 'major_axis_length_n_0']
+
 # Select only the desired columns
-df_selected = df[
-    ['cell_area', 'corrected_length', 'corrected_flagella_length', 'area_k_0', 'area_n_0', 'dna_sum_k_0', 'dna_sum_n_0',
-     'norm_pos_k_0', 'norm_pos_n_0']]
+df_selected = df[features]
+
+# Filtering for specific cell types
+filtered_df = df[df['count_kn'].isin(['1K1N', '2K1N', '2K2N'])]
+
+# List to hold results
+results = []
+
+for i, feature_x in enumerate(features):
+    for feature_y in features[i + 1:]:
+        # Extracting the values for each feature
+        x = filtered_df[feature_x].values
+        y = filtered_df[feature_y].values
+
+        # Calculate the best fit line (linear regression)
+        slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+
+        # Storing results
+        results.append({
+            'Pair': (feature_x, feature_y),
+            'Pearson Correlation Coefficient': r_value,
+            'P-Value': p_value,
+            'Standard Error': std_err
+        })
+
+# Sorting the results by the correlation coefficient in descending order
+sorted_results = sorted(results, key=lambda x: x['Pearson Correlation Coefficient'], reverse=True)
+
+# Printing the sorted results
+for result in sorted_results:
+    print(f"Pair: {result['Pair']}")
+    print(f"  Pearson Correlation Coefficient: {result['Pearson Correlation Coefficient']}")
+    print(f"  P-Value: {result['P-Value']}")
+    print(f"  Standard Error: {result['Standard Error']}\n")
 
 # Standardize the data
 df_normalized = pd.DataFrame(sc.fit_transform(df_selected), columns=df_selected.columns)
 
-# Apply PCA
-df_pca = pd.DataFrame(pca.fit_transform(df_normalized), columns=['PCA1', 'PCA2'])
+# PCA
+pca_model = PCA(n_components=2, random_state=42)
+df_pca = pd.DataFrame(pca_model.fit_transform(df_normalized), columns=['PCA1', 'PCA2'])
 
-df['count_kn_numeric'] = pd.factorize(df['count_kn'])[0]
+print(pca_model.components_)
+
+# Feature importance for PCA can be derived from the absolute values of the loading scores
+feature_importance_pca = np.abs(pca_model.components_)
+
+contribution_scores = np.square(feature_importance_pca)
+
+# Normalizing the contribution scores to sum to 1 for each component
+contribution_percentage = contribution_scores / np.sum(contribution_scores, axis=1, keepdims=True)
+
+# Converting to percentage
+contribution_percentage *= 100
+
+# Creating a DataFrame for a nicer presentation
+df_contribution_percentage = pd.DataFrame(contribution_percentage, columns=df_normalized.columns,
+                                          index=['PCA1', 'PCA2']).transpose()
+
+# Sorting by contribution to PCA1 for presentation
+pca1_sorted = df_contribution_percentage['PCA1'].sort_values(ascending=False)
+pca2_sorted = df_contribution_percentage['PCA2'].sort_values(ascending=False)
+
+# Creating a new DataFrame for a nicely formatted presentation
+df_sorted_contributions = pd.DataFrame({
+    'Feature_PCA1': pca1_sorted.index,
+    'PCA1_Contribution%': pca1_sorted.values,
+    'Feature_PCA2': pca2_sorted.index,
+    'PCA2_Contribution%': pca2_sorted.values
+})
+
+df_sorted_contributions.reset_index(drop=True, inplace=True)
+
+print(df_sorted_contributions.to_string())
+
+print("Variance explained by each principal component:")
+for i, variance in enumerate(pca_model.explained_variance_ratio_):
+    print(f"PC{i+1}: {variance*100:.2f}%")
+
+# Optionally, to see the cumulative variance explained:
+cumulative_variance = np.cumsum(pca_model.explained_variance_ratio_)
+print("\nCumulative variance explained by the first n components:")
+for i, cum_var in enumerate(cumulative_variance):
+    print(f"First {i+1} PC(s): {cum_var*100:.2f}%")
+# t-SNE
+tsne_model = TSNE(n_components=2, random_state=42)
+df_tsne = pd.DataFrame(tsne_model.fit_transform(df_normalized), columns=['TSNE1', 'TSNE2'])
 
 # UMAP
 umap_model = umap.UMAP(n_components=2, random_state=42)
 df_umap = pd.DataFrame(umap_model.fit_transform(df_normalized), columns=['UMAP1', 'UMAP2'])
 
-# t-SNE
-tsne_model = TSNE(n_components=2, random_state=42)
-df_tsne = pd.DataFrame(tsne_model.fit_transform(df_normalized), columns=['TSNE1', 'TSNE2'])
-
-df['UMAP1'] = df_umap['UMAP1']
-df['UMAP2'] = df_umap['UMAP2']
+df['PCA1'] = df_pca['PCA1']
+df['PCA2'] = df_pca['PCA2']
 df['TSNE1'] = df_tsne['TSNE1']
 df['TSNE2'] = df_tsne['TSNE2']
+df['UMAP1'] = df_umap['UMAP1']
+df['UMAP2'] = df_umap['UMAP2']
 
 # Pair plot
 fig = px.scatter_matrix(df,
                         dimensions=['cell_area', 'corrected_length', 'corrected_flagella_length', 'area_k_0',
                                     'area_n_0', 'dna_sum_k_0', 'dna_sum_n_0',
-                                    'norm_pos_k_0', 'norm_pos_n_0'],
+                                    'norm_pos_k_0', 'norm_pos_n_0', 'major_axis_length_k_0', 'major_axis_length_n_0'],
                         color='count_kn', title='Scatter Matrix', labels={
         'cell_area': 'Area',
         'corrected_length': 'Length',
@@ -301,19 +372,21 @@ fig = px.scatter_matrix(df,
         'dna_sum_n_0': 'DNA N',
         'norm_pos_k_0': 'Norm Pos K',
         'norm_pos_n_0': 'Norm Pos N',
+        'major_axis_length_k_0': 'Major Axis K',
+        'major_axis_length_n_0': 'Major Axis N',
     })
-fig.update_layout(legend_title_text='Legend', width=1000, height=1000)
+fig.update_layout(legend_title_text='Legend', width=2000, height=2000)
 fig.update_traces(hoverinfo="none")
 
-# UMAP plot
-fig_umap = px.scatter(df,
-                      x='UMAP1',
-                      y='UMAP2',
-                      color='count_kn',
-                      title='UMAP Plot')
+# PCA plot
+fig_pca = px.scatter(df,
+                     x='PCA1',
+                     y='PCA2',
+                     color='count_kn',  # Ensure this matches the color mapping used in other plots
+                     title='PCA Plot')
 
-fig_umap.update_layout(legend_title_text='Legend', width=1000, height=1000)
-fig_umap.update_traces(hoverinfo="none", hovertemplate=None)
+fig_pca.update_layout(legend_title_text='Legend', width=1000, height=1000)
+fig_pca.update_traces(hoverinfo="none", hovertemplate=None)
 
 # t-SNE plot
 fig_tsne = px.scatter(df,
@@ -325,11 +398,22 @@ fig_tsne = px.scatter(df,
 fig_tsne.update_layout(legend_title_text='Legend', width=1000, height=1000)
 fig_tsne.update_traces(hoverinfo="none", hovertemplate=None)
 
+# UMAP plot
+fig_umap = px.scatter(df,
+                      x='UMAP1',
+                      y='UMAP2',
+                      color='count_kn',
+                      title='UMAP Plot')
+
+fig_umap.update_layout(legend_title_text='Legend', width=1000, height=1000)
+fig_umap.update_traces(hoverinfo="none", hovertemplate=None)
+
 app = Dash(__name__)
 app.layout = html.Div([
-    dcc.Graph(id="graph", figure=fig, clear_on_unhover=True),
-    dcc.Graph(id="graph_umap", figure=fig_umap, clear_on_unhover=True),
-    dcc.Graph(id="graph_tsne", figure=fig_tsne, clear_on_unhover=True),
+    dcc.Graph(id="graph", figure=fig, clear_on_unhover=True),  # Scatter Matrix
+    dcc.Graph(id="graph_pca", figure=fig_pca, clear_on_unhover=True),  # PCA
+    dcc.Graph(id="graph_tsne", figure=fig_tsne, clear_on_unhover=True),  # t-SNE
+    dcc.Graph(id="graph_umap", figure=fig_umap, clear_on_unhover=True),  # UMAP
     dcc.Tooltip(id="graph-tooltip"),
 ])
 
@@ -339,10 +423,12 @@ app.layout = html.Div([
     Output("graph-tooltip", "bbox"),
     Output("graph-tooltip", "children"),
     [Input("graph_umap", "hoverData"),
-     Input("graph_tsne", "hoverData")],
+     Input("graph_tsne", "hoverData"),
+     Input("graph_pca", "hoverData")],  # Include PCA in the callback
 )
-def display_hover(hoverData_umap, hoverData_tsne):
-    hoverData = hoverData_umap if hoverData_umap is not None else hoverData_tsne
+def display_hover(hoverData_umap, hoverData_tsne, hoverData_pca):
+    # Choose the hover data to display based on which plot is hovered over
+    hoverData = hoverData_umap if hoverData_umap is not None else hoverData_tsne if hoverData_tsne is not None else hoverData_pca
     if hoverData is None:
         return False, no_update, no_update
 

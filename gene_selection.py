@@ -5,7 +5,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from tqdm import tqdm
-from tryptag import TrypTag, CellLine
+from tryptag import TrypTag
 
 """
 This script uses the TrypTag localisation search to find genes that are localised to the paraflagellar rod.
@@ -66,3 +66,7 @@ def find_genes():
 
     for i, (k, v) in enumerate(sorted_percentile_scores.items()):
         print(f"{i + 1}. {k}: {v}")
+
+
+if __name__ == "__main__":
+    find_genes()

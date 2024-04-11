@@ -132,7 +132,7 @@ def train_kmeans(directory, channel, n_clusters, genes_of_interest=None, show_im
                       and any(gene in file for gene in (genes_of_interest or []))]))
 
     # dont set k too high, you will run out of memory
-    files = random.sample(files, k=max(len(files), min(30, len(files))))
+    files = random.sample(files, k=min(len(files), 5))
     image_width = 2560
     image_height = 2160
     image_pixels = image_width * image_height
@@ -264,7 +264,7 @@ class Field:
     def mng_mask(self):
         return cv2.imread(os.path.join(self.base_path, "mng_mask.png"), cv2.IMREAD_GRAYSCALE)
 
-    def _get_get_ellipse_and_axis_data(self, dna_mask):
+    def _get_ellipse_and_axis_data(self, dna_mask):
         # Perform connected components analysis on DNA mask
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(dna_mask, connectivity=8)
 
@@ -628,7 +628,7 @@ def main(clustering=True, channels_and_clusters=None, show_images=False, selecte
                 train_kmeans(gene_directory, channel, n_clusters, gene, SHOW_IMAGES)
 
         # uses the trained KMeans models and will save the segmentation masks and the dataset
-        TrypTagDataset(directory=gene_directory, genes_of_interest=[gene])
+        #TrypTagDataset(directory=gene_directory, genes_of_interest=[gene])
 
 
 if __name__ == '__main__':

@@ -69,10 +69,10 @@ df1 = pd.DataFrame({
 })
 
 fig1 = px.scatter(df, x="Component 1", y="Component 2")
-fig1.update_layout(height=1000, width=1000, title="PCA of ResNet50 Features")
+fig1.update_layout(height=2000, width=2000, title="PCA of ResNet50 Features")
 
 fig = px.scatter(df1, x="Component 1", y="Component 2")
-fig.update_layout(height=1000, width=1000, title="t-SNE of ResNet50 Features")
+fig.update_layout(height=2000, width=2000, title="t-SNE of ResNet50 Features")
 
 # Plotly App
 app = Dash(__name__)
