@@ -6,6 +6,8 @@ import numpy as np
 import tifffile as tiff
 from matplotlib.widgets import RangeSlider
 from skimage.measure import label, regionprops
+
+import intel_sklearn_patch
 from sklearn.cluster import KMeans
 
 

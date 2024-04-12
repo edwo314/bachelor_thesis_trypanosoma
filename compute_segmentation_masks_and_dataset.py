@@ -10,14 +10,11 @@ import tifffile as tiff
 from joblib import load, dump
 from matplotlib import pyplot as plt
 from scipy import ndimage
-from sklearnex import patch_sklearn
 from tqdm import tqdm
 
-from constants import DATASET_DIR, MODELS_DIR, SELECTED_GENES
-
-patch_sklearn()
-
+import intel_sklearn_patch
 from sklearn.cluster import KMeans
+from constants import DATASET_DIR, MODELS_DIR, SELECTED_GENES
 
 
 def fill_holes(mask, kernel_size=5):
@@ -308,7 +305,7 @@ class Field:
 
         """
         ### THIS VISUALIZES THE ELLIPSES FOR THE DNA MASKS AND DECIDES BETWEEN KINETOPLAST AND NUCLEUS ### 
-        
+
         # Load the DNA mask for nucleus and kinetoplast analysis
         dna_mask_path = os.path.join(self.base_path, 'dna_mask.png')
         dna_mask = cv2.imread(dna_mask_path, cv2.IMREAD_GRAYSCALE)
@@ -628,7 +625,7 @@ def main(clustering=True, channels_and_clusters=None, show_images=False, selecte
                 train_kmeans(gene_directory, channel, n_clusters, gene, SHOW_IMAGES)
 
         # uses the trained KMeans models and will save the segmentation masks and the dataset
-        #TrypTagDataset(directory=gene_directory, genes_of_interest=[gene])
+        # TrypTagDataset(directory=gene_directory, genes_of_interest=[gene])
 
 
 if __name__ == '__main__':

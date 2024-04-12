@@ -10,7 +10,12 @@ def download_data():
     tryptag = TrypTag()
 
     for cell_id, cell_info in SELECTED_GENES.items():
-        tryptag.fetch_data(CellLine(life_stage=cell_info[1], gene_id=cell_id, terminus=cell_info[0]))
+        print(cell_id, cell_info)
+        try:
+            tryptag.fetch_data(CellLine(life_stage=cell_info[1], gene_id=cell_id, terminus=cell_info[0]))
+        except FileExistsError:
+            print("Skipping " + cell_id + cell_info[0] + " gene already present in the dataset.")
+            continue
 
 
 def create_dataset():
@@ -53,7 +58,7 @@ if __name__ == "__main__":
     """
     The download takes a long long time. If you dont want to download all you can just download one gene by uncommenting
     the rest of the selected genes in the constants.py
-    
+
     Create dataset will create a folder /dataset and copy the tiff files into it, that will later be used by
     compute_segmentation_masks_and_dataset.py
     """

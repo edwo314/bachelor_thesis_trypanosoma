@@ -1,28 +1,42 @@
 # Bachelor Thesis: Trypanosoma Code Repository
 
-This repository contains the code used for generating plots and statistics in my Bachelor's thesis related to *Trypanosoma*. The code is provided "AS IS", without warranty of completeness or functionality, as it was created for specific, non-general purposes.
+This repository contains the code used for generating plots and statistics in my Bachelor's thesis related to *Trypanosoma*.
+
+## Main contributions
+- A classification scheme for procyclic Trypanosoma brucei using binary decision trees
+- New measurements for the subcycle process of kinetoplasts and nuclei using ellipses
+- Improving MAT-based cell length measurements, closing a previous 3% gap in automated and manual cell measurements
+- Creation of a diverse flagella dataset consisting of 10 genes. The flagella dataset contains the best found genes localising the paraflagellar rod.
+- Application of K-Means clustering as an adaptive thresholding technique for the creation of segmentation masks
+- New data for the cell and flagella lengths, but also for the size of kinetoplasts and nuclei
+- Use of dimensionality reduction techniques to try to find clusters and correlations in features and image data to identify differences between cell cycle stages
+- Improving existing visualisations showing the newly created flagella masks on top of the cell masks. Additionally, the fitted ellipses are also visualised.
 
 ## Disclaimer
 - The code may not be user-friendly, as it was not intended for use by the general public. It is rather a collection of scripts than a cohesive program.
 - Users should be cautious and aware that some files need to be run in a specific order due to dependencies on the output of other files.
 - Most scripts print a lot of console information, which is mostly due to ray multiprocessing and can be ignored.
 - Some results might not be the exact same due to different hardware, python versions, python package versions or randomness.
+- The randomness aspect of the segmentation has been addressed in the thesis.
 
 ## Usage
 
 ### Initial Setup
 1. Clone this repository.
-2. Look at the requirements.txt and install the required dependencies listed in `requirements.txt` using a virtual environment (recommended).
-3. Additional installation instructions for `tryptag`, `umap`, and `intel` extension for `scikit-learn` are included within `requirements.txt`.
+2. Look at the requirements.txt and install the required dependencies listed in `requirements.txt` using a virtual environment running on Python 3.10
+3. You can install them by typing `pip install -r requirements.txt`
 4. Before running each file read them. Some contain additional information on what they do, how to use them and how to avoid long waiting times.
 
 ### Modified Files from TrypTag Repository
 This repository includes modified copies of files originally from the [TrypTag GitHub repository](https://github.com/zephyris/tryptag/tree/main).
-- `tryptag_copy.py` and `tryptools_copy.py` are altered to support the `kinetoplast_nuclei_properties_all_configurations.py` and `kinetoplast_nuclei_properties_individual_configurations.py` files by adding necessary information for ellipse reconstruction from DNA masks. Replace the original `tryptag.py` and `tryptools.py` in your virtual environment with these copies and then rename them.
-- You need this otherwise some scripts might not work.
+- `tryptag_copy.py` and `tryptools_copy.py` are altered to support the `kinetoplast_nuclei_properties_all_configurations.py` and `kinetoplast_nuclei_properties_individual_configurations.py` files by adding necessary information for ellipse reconstruction from DNA masks.
+- Replace the original `tryptag.py` and `tryptools.py` in your virtual environment with `tryptag_copy.py` and `tryptools_copy.py`.
+- You can find them inside `.venv/Lib/site-packages/tryptag/` and `.venv/Lib/site-packages/tryptag/tryptools/`
+- The `tryptag_copy.py` and `tryptools_copy.py` should then be named `tryptag.py` and `tryptools.py` to make sure the relative imports still work.
+- You need this otherwise some scripts that calculate the major axis length might not work.
 
 ### Dataset Preparation
-1. Run `get_flagella_dataset.py` to download the necessary dataset. Depending on your internet connection this might take a couple of hours.
+1. Run `get_flagella_dataset.py` to download the necessary dataset. It will download 118.6 GB of data. With my 20MB/s connection it took around 1 hour and 45 minutes.
 2. Execute `compute_segmentation_masks_and_dataset.py` to create k-means models for segmentation and generate segmentation masks for the entire dataset.
 
 ### Important Files to Run in Order
@@ -46,4 +60,5 @@ This repository includes modified copies of files originally from the [TrypTag G
 - `tryptools_copy.py`: A potentially modified copy of `tryptools.py` from the TrypTag GitHub repository.
 
 ## Contribution & Support
-Since this code was used specifically for my Bachelor’s thesis, it is not designed for general use or ongoing support. For reference and replication purposes in academic work, you're welcome to use and modify the code while citing appropriate sources.
+Since this code was used specifically for my Bachelor’s thesis, it is not designed for general use or ongoing support.
+For reference and replication purposes in academic work, you're welcome to use and modify the code while citing appropriate sources.

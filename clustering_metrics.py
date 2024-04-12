@@ -1,19 +1,16 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import ray
 import tifffile
 from cv2 import resize
 from matplotlib.ticker import MaxNLocator
-from sklearnex import patch_sklearn
+from ray import get
 
-from constants import DATASET_DIR
-
-# sklearnex will use intel extensions for sklearn
-patch_sklearn()
-
+import intel_sklearn_patch
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
-import ray
-from ray import get
+
+from constants import DATASET_DIR
 
 ray.init()
 

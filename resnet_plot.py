@@ -7,6 +7,8 @@ from PIL import Image
 from dash import Dash, dcc, html, Input, Output, no_update
 from keras.applications.resnet50 import ResNet50, preprocess_input
 from matplotlib import pyplot as plt
+
+import intel_sklearn_patch
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE

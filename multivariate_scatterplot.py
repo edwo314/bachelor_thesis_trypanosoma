@@ -12,6 +12,9 @@ from dash import dcc, html, Input, Output, no_update, Dash
 from joblib import load
 from matplotlib import pyplot as plt
 from scipy import stats
+
+import intel_sklearn_patch
+
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
