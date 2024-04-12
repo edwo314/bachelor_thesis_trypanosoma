@@ -1,6 +1,7 @@
 # Bachelor Thesis: Trypanosoma Code Repository
 
-This repository contains the code used for generating plots and statistics in my Bachelor's thesis related to *Trypanosoma*.
+This repository contains the code used for generating plots and statistics in my Bachelor's.
+The thesis can be found under `thesis.pdf` in this repository.
 
 ## Main contributions
 - A classification scheme for procyclic Trypanosoma brucei using binary decision trees
